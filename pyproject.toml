@@ -1,0 +1,19 @@
+[project]
+name = "davi-traff-weath"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "geopandas>=1.0.1",
+    "geopy>=2.4.1",
+    "ipykernel>=6.30.1",
+    "matplotlib>=3.9.4",
+    "nbformat>=5.10.4",
+    "pandas>=2.3.2",
+    "plotly>=6.3.0",
+    "plotly-geo>=1.0.0",
+    "pyshp>=2.3.1",
+    "scikit-learn>=1.6.1",
+    "shapely>=2.1.1",
+]
