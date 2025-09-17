@@ -16,6 +16,7 @@ dependencies = [
     "plotly>=6.3.0",
     "plotly-geo>=1.0.0",
     "pyarrow>=21.0.0",
+    "pydeck>=0.9.1",
     "pyshp>=2.3.1",
     "scikit-learn>=1.6.1",
     "shapely>=2.1.1",
