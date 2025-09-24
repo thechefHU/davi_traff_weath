@@ -1,0 +1,57 @@
+html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden; /* Prevent scrollbars from appearing */
+}
+.main-content-wrapper {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    transition: width 0.3s ease;
+}
+.map-container {
+    flex-grow: 1; /* Allows the map to fill available space */
+    transition: height 0.5s ease;
+}
+.charts-container {
+    transition: height 0.5s ease;
+    overflow: hidden; /* Hide charts when height is 0 */
+}
+.toggle-button {
+    position: fixed;
+    z-index: 1000;
+    cursor: pointer;
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    border-radius: 5px;
+}
+.charts-toggle {
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 5px 15px;
+}
+.filters-toggle {
+    right: -10px; /* Start slightly off-screen */
+    top: 50%;
+    transform: translateY(-50%) rotate(-90deg);
+    transform-origin: bottom right;
+    padding: 5px 15px;
+}
+.placeholder {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    border: 2px dashed #ccc;
+    color: #ccc;
+    font-size: 2rem;
+    font-weight: bold;
+}
+.chart-placeholder-wrapper {
+    padding: 15px;
+    height: 100%;
+}
