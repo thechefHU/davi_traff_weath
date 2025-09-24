@@ -6,9 +6,14 @@ To run you can run
 uv run clean_data.py
 
 May have to sync first using uv sync (as I installed some new packages)
+
+Link to direct download of population data
+https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/counties/totals/co-est2020-alldata.csv
 """
 
-
+import geopandas
+from shapely.geometry import Polygon, LineString, Point
+import pyogrio
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -18,6 +23,8 @@ data_folder = Path("data")
 os.makedirs(data_folder, exist_ok=True)
 print("Loading data from csv")
 traffic = pd.read_csv(data_folder / "US_Accidents_March23.csv", engine="c")
+geodata = geopandas.read_file(data_folder /"counties.geojson")
+population = pd.read_csv("data/co-est2021-alldata.csv",encoding="latin1")
 
 print("Starting type conversion")
 traffic["ID"] = traffic["ID"].astype("string")
@@ -74,6 +81,79 @@ print("\nAll done")
 
 print(f"New dtypes")
 print(traffic.dtypes)
+
+print("\n WE ARE NOT ALL DONE, fix geoID, population and density takes around 5 minutes")
+#Adding a FIPS code to all traffic accidents, named geoid in the code
+polygons = geodata["geometry"]
+
+geoid = geodata["GEOID"]
+
+smallTraffic = traffic[["State","County","Start_Lng","Start_Lat"]] #Chop away most things from the traffic dataset
+
+pair = smallTraffic[["State","County"]].drop_duplicates()
+
+states = pair["State"].unique()
+
+traffic["geoid"] = pd.Series([0]*traffic.shape[0],dtype=str)
+
+
+#Assign geoid to traffic data for all states and counties except for connecticut
+for state in states:
+    if state=="CT":
+        continue
+    stateTraffic = smallTraffic[smallTraffic["State"]==state]
+    counties = pair[pair["State"]==state]["County"]
+
+    for county in counties:
+        countyTraffic = stateTraffic[stateTraffic["County"]==county]
+        index = stateTraffic[stateTraffic["County"]==county].index
+        geoidSC = 0
+        for idx, row in countyTraffic.iterrows():
+            lng = row["Start_Lng"]
+            lat = row["Start_Lat"]
+            tempGeoid = geoid[polygons.contains(Point(lng,lat))]
+            if tempGeoid.empty == False:
+                geoidSC = str(geoid[tempGeoid.index[0]])
+                break
+        traffic.loc[index,"geoid"] = geoidSC
+
+#Assign each accident in connecticut one at the time
+conneticutTraffic = smallTraffic[smallTraffic["State"]=="CT"]
+print(conneticutTraffic.shape[0]) #amounts of traffic accidents in Conneticut
+
+for idx, row in conneticutTraffic.iterrows():
+    lng = row["Start_Lng"]
+    lat = row["Start_Lat"]
+    tempGeoid = geoid[polygons.contains(Point(lng,lat))]
+    if tempGeoid.empty == False:
+        traffic.loc[idx,"geoid"] = geoid[tempGeoid.index[0]]
+    elif row["County"]=="New Haven": #Somehow two data points could not be found in the geopandas.contain, but they are both in New haven, so it was done manually
+        traffic.loc[idx,"geoid"] = "09009"
+
+#Add data to counties.geojson file, make three new columns population, density and dataExist
+
+geodataPopulation = pd.Series([1]*geodata.shape[0],dtype=int)
+geodataDensity = pd.Series([1]*geodata.shape[0],dtype=float)
+geodataDataExist = pd.Series([False]*geodata.shape[0],dtype=bool)
+
+uniqueCounties = traffic["geoid"].unique()
+count = 0
+for geoid in uniqueCounties:
+    state = int(geoid[0:2])
+    county = int(geoid[2:])
+    popIndex = population.loc[(population["STATE"]==state) & (population["COUNTY"]==county)].index[0]
+    pop = population.loc[popIndex,"ESTIMATESBASE2020"]
+    index = geodata[geodata["GEOID"]==geoid].index[0]
+    geodataPopulation[index] = pop
+    geodataDensity[index] = pop/geodata.loc[index,"ALAND"]*int(1e6) # *int(1e6) turns ALAND into km2 from m2
+    geodataDataExist[index] = True
+
+#Merge new columns into geodata
+geodata = pd.concat([geodata,geodataPopulation,geodataDensity,geodataDataExist],axis=1)
+
+geodata = geodata.rename(columns={0:"Population",1:"Density",2:"DataExist"})
+
+geodata.to_file("data/counties.geojson", driver='GeoJSON')
 
 print("Saving as data/traffic.parquet")
 traffic.to_parquet(data_folder / "traffic.parquet", engine="fastparquet")
