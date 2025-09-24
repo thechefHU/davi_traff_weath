@@ -8,16 +8,20 @@ uv run clean_data.py
 May have to sync first using uv sync (as I installed some new packages)
 
 Link to direct download of population data
-https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/counties/totals/co-est2020-alldata.csv
+https://www2.census.gov/programs-surveys/popest/datasets/2020-2021/counties/totals/co-est2021-alldata.csv
 """
 
 import geopandas
 from shapely.geometry import Polygon, LineString, Point
-import pyogrio
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import json
 import os
+import h3
+
+
+H3_RESOLUTION = 4 # granularity of hexagons
 
 data_folder = Path("data")
 os.makedirs(data_folder, exist_ok=True)
@@ -77,10 +81,62 @@ traffic["Sunrise_Sunset"] = traffic["Sunrise_Sunset"].astype("category")
 traffic["Civil_Twilight"] = traffic["Civil_Twilight"].astype("category")
 traffic["Nautical_Twilight"] = traffic["Nautical_Twilight"].astype("category")
 traffic["Astronomical_Twilight"] = traffic["Astronomical_Twilight"].astype("category")
-print("\nAll done")
+print("\nType conversion done")
 
 print(f"New dtypes")
 print(traffic.dtypes)
+
+print("Putting points into H3 cells...")
+traffic["h3cell"] = traffic.apply(lambda row: h3.latlng_to_cell(row["Start_Lat"], row["Start_Lng"], H3_RESOLUTION), axis=1)
+
+print("Creating H3 DataFrame")
+# find coordinates of h3 cells
+h3_lats = []
+h3_lngs = []
+h3_cells = traffic["h3cell"].unique()
+for cell in h3_cells:
+    lat, lng = h3.cell_to_latlng(cell)
+    h3_lats.append(lat)
+    h3_lngs.append(lng)
+
+h3_df = pd.DataFrame({
+    "h3cell": h3_cells,
+    "h3_lat": h3_lats,
+    "h3_lng": h3_lngs
+})
+
+print("Saving h3 dataframe to parquet")
+h3_df.to_parquet(data_folder / "h3_cells.parquet", engine="fastparquet")
+
+print("Creating GeoJSON of H3 cells")
+geojson_obj = {
+    "type": "FeatureCollection",
+    "features": []
+}
+
+for _, row in h3_df.iterrows():
+    # The lat-lng pairs need to be in (lng, lat) order for GeoJSON
+    geom = {
+        "type": "Polygon",
+        "coordinates": [[
+            (lng, lat) for lat, lng in h3.cell_to_boundary(row["h3cell"])
+        ]]
+    }
+
+    feature = {
+        "type": "Feature",
+        "geometry": geom,
+        "properties": {
+            "h3cell": row["h3cell"]
+        }
+    }
+    geojson_obj["features"].append(feature)
+
+print("Saving H3 GeoJSON to file")
+with open(data_folder / "h3_cells.geojson", "w") as f:
+    json.dump(geojson_obj, f)
+
+print("H3 cells done.")
 
 print("\n WE ARE NOT ALL DONE, fix geoID, population and density takes around 5 minutes")
 #Adding a FIPS code to all traffic accidents, named geoid in the code
@@ -95,7 +151,6 @@ pair = smallTraffic[["State","County"]].drop_duplicates()
 states = pair["State"].unique()
 
 traffic["geoid"] = pd.Series([0]*traffic.shape[0],dtype=str)
-
 
 #Assign geoid to traffic data for all states and counties except for connecticut
 for state in states:
@@ -153,7 +208,7 @@ geodata = pd.concat([geodata,geodataPopulation,geodataDensity,geodataDataExist],
 
 geodata = geodata.rename(columns={0:"Population",1:"Density",2:"DataExist"})
 
-geodata.to_file("data/counties.geojson", driver='GeoJSON')
+geodata.to_file("data/counties_processed.geojson", driver='GeoJSON')
 
 print("Saving as data/traffic.parquet")
 traffic.to_parquet(data_folder / "traffic.parquet", engine="fastparquet")

@@ -7,7 +7,9 @@ from pathlib import Path
 import h3
 import json
 
-h3_resolution = 4 # granularity of hexagons
+# If zoom level is above this threshold, show scatter plot instead of hexagons
+SCATTER_PLOT_ZOOM_THRESHOLD = 5.0
+H3_RESOLUTION = 4
 
 # Initialize Dash app
 app = dash.Dash(__name__)
@@ -16,52 +18,11 @@ app = dash.Dash(__name__)
 data_folder = Path("data")
 print("Loading data...")
 traffic = pd.read_parquet(data_folder / "traffic.parquet", engine="fastparquet")
-print("Done loading data, putting points into H3 cells...")
 traffic_reduced = traffic
-traffic_reduced["h3cell"] = traffic_reduced.apply(lambda row: h3.latlng_to_cell(row["Start_Lat"], row["Start_Lng"], h3_resolution), axis=1)
-print("H3 cells done.")
 
-# find coordinates of h3 cells
-h3_lats = []
-h3_lngs = []
-h3_cells = traffic_reduced["h3cell"].unique()
-for cell in h3_cells:
-    lat, lng = h3.cell_to_latlng(cell)
-    h3_lats.append(lat)
-    h3_lngs.append(lng)
-
-h3_df = pd.DataFrame({
-    "h3cell": h3_cells,
-    "h3_lat": h3_lats,
-    "h3_lng": h3_lngs
-})
-
-geojson_obj = {
-    "type": "FeatureCollection",
-    "features": []
-}
-
-for _, row in h3_df.iterrows():
-    # The lat-lng pairs need to be in (lng, lat) order for GeoJSON
-    geom = {
-        "type": "Polygon",
-        "coordinates": [[
-            (lng, lat) for lat, lng in h3.cell_to_boundary(row["h3cell"])
-        ]]
-    }
-
-    feature = {
-        "type": "Feature",
-        "geometry": geom,
-        "properties": {
-            "h3cell": row["h3cell"]
-        }
-    }
-    geojson_obj["features"].append(feature)
-
-
-# Dictionary of h3 cells to indices in traffic_reduced
-h3_cells_groups = traffic_reduced.groupby("h3cell").groups
+h3_df = pd.read_parquet(data_folder / "h3_cells.parquet", engine="fastparquet")
+with open(data_folder / "h3_cells.geojson", "r") as f:
+    geojson_obj = json.load(f)
 
 
 
@@ -79,12 +40,16 @@ app.layout = html.Div([
         clearable=False
     ),
     dcc.Store(id='filtered-data'),
+    dcc.Store(id='filtered-cells'),
     dcc.Graph(id='scatter-map')
 ])
 
 # Callback to update map based on weather condition
 @app.callback(
+    [
+    Output('filtered-cells', 'data'),
     Output('filtered-data', 'data'),
+    ],
     [Input('weather-dropdown', 'value')]
 )
 def filter_data(selected_weather):
@@ -92,48 +57,36 @@ def filter_data(selected_weather):
     filtered = traffic_reduced[traffic_reduced['Weather_Condition'] == selected_weather]
     print("Aggregating based on H3 cells...")
     # Aggregate data based on H3 cells
-    filtered = filtered.groupby('h3cell').size().reset_index(name='n_accidents')
+    filtered_grouped = filtered.groupby('h3cell').size().reset_index(name='n_accidents')
     filtered_cells = h3_df[["h3cell", "h3_lat", "h3_lng"]].copy()
     # set n_accidents in h3_df based on filtered data
-    filtered_cells = filtered_cells.merge(filtered, on='h3cell', how='left')
-    # Convert filtered_cells to GeoJSON format
-    # features = []
-    # for _, row in filtered_cells.iterrows():
-    #     feature = {
-    #         "type": "Feature",
-    #         "geometry": mapping(row["geometry"]),
-    #         "properties": {
-    #             "h3cell": row["h3cell"],
-    #             "h3_lat": row["h3_lat"],
-    #             "h3_lng": row["h3_lng"],
-    #             "n_accidents": row.get("n_accidents", 0)
-    #         }
-    #     }
-    #     features.append(feature)
-    # geojson_data = {
-    #     "type": "FeatureCollection",
-    #     "features": features
-    # }
-    return filtered_cells.to_dict('records')
+    filtered_cells = filtered_cells.merge(filtered_grouped, on='h3cell', how='left')
+
+    # Save both filtered_cells and filtered in dcc.Store
+    return filtered_cells.to_dict('records'), filtered.to_dict('records')
 
 @app.callback(
     Output('scatter-map', 'figure'),
-    [Input('filtered-data', 'data'),
+    [Input('filtered-cells', 'data'),
+     Input('filtered-data', 'data'),
      Input('scatter-map', 'relayoutData')]
 )
-def update_map(filtered_cells, relayout_data):
-    filtered = pd.DataFrame(filtered_cells)
-
+def update_map(filtered_cells, filtered_data, relayout_data):
+    filtered_cells = pd.DataFrame(filtered_cells)
+    filtered_data = pd.DataFrame(filtered_data)
     # Default map settings
+    current_zoom = 3 # default zoom level
     layout = dict(
         style="carto-positron",
-        zoom=3,
+        zoom=current_zoom,
         center={"lat": 37.0902, "lon": -95.7129}
     )
     if relayout_data:
+        print(relayout_data)
         if 'map.center' in relayout_data and 'map.zoom' in relayout_data:
             layout['center'] = relayout_data['map.center']
             layout['zoom'] = relayout_data['map.zoom']
+            current_zoom = relayout_data['map.zoom']
         else:
             # Check for individual keys
             if 'map.center.lat' in relayout_data and 'map.center.lon' in relayout_data:
@@ -141,8 +94,21 @@ def update_map(filtered_cells, relayout_data):
                     "lat": relayout_data['map.center.lat'],
                     "lon": relayout_data['map.center.lon']
                 }
-            if 'mapbox.zoom' in relayout_data:
-                layout['zoom'] = relayout_data['mapbox.zoom']
+
+        if 'map._derived' in relayout_data:
+            coordinates = relayout_data['map._derived']['coordinates']
+
+            # readd the first coordinate to close the polygon
+            coordinates.append(coordinates[0])
+            # Flip all the lat-lng pairs to lng-lat for h3
+            coordinates = [(lng, lat) for lat, lng in coordinates]
+            poly = h3.LatLngPoly(coordinates)
+            # get all h3 cells in the polygon
+            h3_cells_in_polygon = h3.h3shape_to_cells(poly, H3_RESOLUTION)
+            filtered = filtered[filtered['h3cell'].isin(h3_cells_in_polygon)]
+
+
+
     #zmax_value = 2000 / max(1, layout['zoom']**2)  # Adjust zmax based on zoom level
 
     # fig = go.Figure(data=go.Densitymap(
@@ -162,16 +128,21 @@ def update_map(filtered_cells, relayout_data):
 
 
     # TODO: only create fig onnce, use update_layout to update zoom and center
+    print(current_zoom)
+
+    if current_zoom > SCATTER_PLOT_ZOOM_THRESHOLD:
+        print("Using scatter plot")
+    print(filtered_cells)
     fig = px.choropleth_map(
-        filtered,
+        filtered_cells,
         geojson=geojson_obj,
         locations='h3cell',
         featureidkey='properties.h3cell',
         color='n_accidents',
         color_continuous_scale="Viridis",
-        range_color=[0, filtered['n_accidents'].quantile(0.9)],
+        range_color=[0, filtered_cells['n_accidents'].quantile(0.9)],
         map_style="carto-positron",
-        zoom=3,
+        zoom=current_zoom,
         center={"lat": 37.0902, "lon": -95.7129},
         opacity=0.5,
         hover_data={'h3cell': True, 'n_accidents': True}
@@ -184,7 +155,6 @@ def update_map(filtered_cells, relayout_data):
         height=700,
         margin={"r":0,"t":0,"l":0,"b":0}
     )
-    return fig
     return fig
 
 if __name__ == '__main__':
