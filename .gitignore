@@ -7,6 +7,6 @@ wheels/
 data/
 *.egg-info
 decks/
-
+!data/statesArea.csv
 # Virtual environments
 .venv
