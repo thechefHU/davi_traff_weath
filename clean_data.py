@@ -174,7 +174,6 @@ for state in states:
 
 #Assign each accident in connecticut one at the time
 conneticutTraffic = smallTraffic[smallTraffic["State"]=="CT"]
-print(conneticutTraffic.shape[0]) #amounts of traffic accidents in Conneticut
 
 for idx, row in conneticutTraffic.iterrows():
     lng = row["Start_Lng"]
@@ -209,6 +208,26 @@ geodata = pd.concat([geodata,geodataPopulation,geodataDensity,geodataDataExist],
 geodata = geodata.rename(columns={0:"Population",1:"Density",2:"DataExist"})
 
 geodata.to_file("data/counties_processed.geojson", driver='GeoJSON')
+
+
+##################################################### Added statesArea.csv to main pull it into data !!!!!!!!!!!!!!!!!!!!!!!!
+area = pd.Series([1]*50,dtype=int)
+area = pd.read_csv("data/statesArea.csv", sep=",",header=None)
+area = area.rename(columns={0:"name",1:"area"})
+states = pd.read_json("data/us-states.json")
+features = states["features"]
+
+
+for idx, row in features.items():
+    properties = row["properties"]
+    name = properties["name"]
+    stateArea = float(area.loc[area["name"]==name,"area"].iloc[0])
+    pop = float(population.loc[(population["STNAME"]==name) & (population["COUNTY"]==0),"ESTIMATESBASE2020"].iloc[0]) #population
+    density = pop/stateArea
+    properties.update({"Area":stateArea,"Population":pop,"Density":density})
+
+states.to_json("data/us-states_processed.json")
+
 
 print("Saving as data/traffic.parquet")
 traffic.to_parquet(data_folder / "traffic.parquet", engine="fastparquet")
