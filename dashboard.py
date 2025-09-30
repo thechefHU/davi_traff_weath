@@ -8,7 +8,7 @@ import h3
 import json
 
 # If zoom level is above this threshold, show scatter plot instead of hexagons
-SCATTER_PLOT_ZOOM_THRESHOLD = 5.0
+SCATTER_PLOT_ZOOM_THRESHOLD = 7.0
 H3_RESOLUTION = 4
 
 # Initialize Dash app
@@ -18,7 +18,7 @@ app = dash.Dash(__name__)
 data_folder = Path("data")
 print("Loading data...")
 traffic = pd.read_parquet(data_folder / "traffic.parquet", engine="fastparquet")
-traffic_reduced = traffic
+traffic_reduced = traffic.head(200000)  # Use a subset for performance
 
 h3_df = pd.read_parquet(data_folder / "h3_cells.parquet", engine="fastparquet")
 with open(data_folder / "h3_cells.geojson", "r") as f:
@@ -53,16 +53,16 @@ app.layout = html.Div([
     [Input('weather-dropdown', 'value')]
 )
 def filter_data(selected_weather):
-    print("Filtering!")
+    print("Filtering!...")
     filtered = traffic_reduced[traffic_reduced['Weather_Condition'] == selected_weather]
     print("Aggregating based on H3 cells...")
     # Aggregate data based on H3 cells
     filtered_grouped = filtered.groupby('h3cell').size().reset_index(name='n_accidents')
-    filtered_cells = h3_df[["h3cell", "h3_lat", "h3_lng"]].copy()
     # set n_accidents in h3_df based on filtered data
-    filtered_cells = filtered_cells.merge(filtered_grouped, on='h3cell', how='left')
-
+    filtered_cells = h3_df[["h3cell", "h3_lat", "h3_lng"]].merge(filtered_grouped, on='h3cell', how='left')
     # Save both filtered_cells and filtered in dcc.Store
+    print("Filtering done")
+    # TODO: Only return filtered if using scatter plot, and only return filtered_cells if using hexbin
     return filtered_cells.to_dict('records'), filtered.to_dict('records')
 
 @app.callback(
@@ -95,17 +95,21 @@ def update_map(filtered_cells, filtered_data, relayout_data):
                     "lon": relayout_data['map.center.lon']
                 }
 
-        if 'map._derived' in relayout_data:
+        # If we should filter based on what is visible on screen
+        if 'map._derived' in relayout_data and current_zoom > SCATTER_PLOT_ZOOM_THRESHOLD:
             coordinates = relayout_data['map._derived']['coordinates']
 
             # readd the first coordinate to close the polygon
             coordinates.append(coordinates[0])
             # Flip all the lat-lng pairs to lng-lat for h3
             coordinates = [(lng, lat) for lat, lng in coordinates]
+            # TODO: If polygon is too small, use polygon of fixed size around center¨
+            print("Filtering based on visible area...")
+            # create h3 polygon
             poly = h3.LatLngPoly(coordinates)
             # get all h3 cells in the polygon
             h3_cells_in_polygon = h3.h3shape_to_cells(poly, H3_RESOLUTION)
-            filtered = filtered[filtered['h3cell'].isin(h3_cells_in_polygon)]
+            filtered_data = filtered_data[filtered_data['h3cell'].isin(h3_cells_in_polygon)]
 
 
 
@@ -132,21 +136,35 @@ def update_map(filtered_cells, filtered_data, relayout_data):
 
     if current_zoom > SCATTER_PLOT_ZOOM_THRESHOLD:
         print("Using scatter plot")
-    print(filtered_cells)
-    fig = px.choropleth_map(
-        filtered_cells,
-        geojson=geojson_obj,
-        locations='h3cell',
-        featureidkey='properties.h3cell',
-        color='n_accidents',
-        color_continuous_scale="Viridis",
-        range_color=[0, filtered_cells['n_accidents'].quantile(0.9)],
-        map_style="carto-positron",
+        fig = px.scatter_map(
+        filtered_data,
+        lat='Start_Lat',
+        lon='Start_Lng',
+        color='Severity',
+        size='Severity',
+        color_continuous_scale=px.colors.sequential.Viridis,
+        size_max=5,
         zoom=current_zoom,
-        center={"lat": 37.0902, "lon": -95.7129},
-        opacity=0.5,
-        hover_data={'h3cell': True, 'n_accidents': True}
+        center={"lat": layout['center']['lat'], "lon": layout['center']['lon']},
+        map_style="carto-positron",
+        hover_data={'Severity': True, 'h3cell': True}
     )
+    else:
+        print("Using hexbin map")
+        fig = px.choropleth_map(
+            filtered_cells,
+            geojson=geojson_obj,
+            locations='h3cell',
+            featureidkey='properties.h3cell',
+            color='n_accidents',
+            color_continuous_scale="Viridis",
+            range_color=[0, filtered_cells['n_accidents'].quantile(0.9)],
+            map_style="carto-positron",
+            zoom=current_zoom,
+            center={"lat": 37.0902, "lon": -95.7129},
+            opacity=0.5,
+            hover_data={'h3cell': True, 'n_accidents': True}
+        )
 
 
     fig.update_layout(
