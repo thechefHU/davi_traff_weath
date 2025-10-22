@@ -11,7 +11,7 @@ import json
 from shapely.geometry import Point
 from shapely import box
 
-current_plot_type = 'hexbin'  # or 'scatter'
+current_plot_type = 'county'  # or 'scatter' or 'county' or 'state'
 
 START_COORDINATES = {"lat": 37.0902, "lon": -95.7129}
 START_ZOOM = 3
@@ -23,7 +23,7 @@ SCATTER_PLOT_ZOOM_THRESHOLD = 7  # zoom level above which we switch to scatter p
 # around the same area
 map_layout_on_last_geofilter = [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM]
 
-external_stylesheets = []
+external_stylesheets = [] 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 # Setup logging
@@ -33,11 +33,20 @@ logger.info("\nWelcome to the coolest dashboard ever!")
 # Load data
 data_folder = Path("data")
 logger.info("Loading data...")
+
 # Load information about the H3 cells
 h3_df = pd.read_parquet(data_folder / "h3_cells.parquet", engine="fastparquet")
 with open(data_folder / "h3_cells.geojson", "r") as f:
-    geojson_obj = json.load(f)
-
+    h3_cells_geojson = json.load(f)
+# Load information about the counties
+counties_df = gpd.read_file(data_folder / "counties.geojson")
+with open(data_folder / "counties.geojson", "r") as f:
+    counties_geojson = json.load(f)
+# Load information about the states
+states_df = gpd.read_file(data_folder / "us-states.json")
+with open(data_folder / "us-states.json", "r") as f:
+    states_geojson = json.load(f)
+# Load the traffic data
 traffic = pd.read_parquet(data_folder / "traffic.parquet", engine="fastparquet")
 #traffic = traffic.sample(200000)  # Use a subset for performance
 logger.info("Only keeping relevant columns...")
@@ -62,13 +71,38 @@ traffic = gpd.GeoDataFrame(
 sindex = traffic.sindex
 
 
+# TODO:  hexagons without accidents are thrown arway in clean data script
 def bin_data_by_h3(df):
     logger.info("Aggregating based on H3 cells...")
     # Aggregate data based on H3 cells
-    filtered_grouped = df.groupby('h3cell').size().reset_index(name='n_accidents')
+    filtered_grouped = df.groupby('h3cell', observed=False).size().reset_index(name='n_accidents')
     # set n_accidents in h3_df based on filtered data
     filtered_cells = h3_df[["h3cell", "h3_lat", "h3_lng"]].merge(filtered_grouped, on='h3cell', how='left')
+    filtered_cells['n_accidents'] = filtered_cells['n_accidents'].fillna(0)
     return filtered_cells
+
+
+def bin_data_by_county(df):
+    logger.info("Aggregating based on counties...")
+    # Aggregate data based on counties
+    filtered_grouped = df.groupby('geoid').size().reset_index(name='n_accidents')
+    # set n_accidents in counties_df based on filtered data
+    filtered_bins = counties_df[["NAME", "GEOID"]].merge(
+        filtered_grouped, left_on='GEOID', right_on='geoid', how='left')
+    filtered_bins['n_accidents'] = filtered_bins['n_accidents'].fillna(0)
+    return filtered_bins
+
+
+def bin_data_by_state(df):
+    logger.info("Aggregating based on states...")
+    # Aggregate data based on states
+    filtered_grouped = df.groupby('State', observed=False).size().reset_index(name='n_accidents')
+    # set n_accidents in states_df based on filtered data
+    filtered_bins = states_df[["name", "id"]].merge(
+        filtered_grouped, left_on='id', right_on='State', how='left')
+    filtered_bins['n_accidents'] = filtered_bins['n_accidents'].fillna(0)
+    return filtered_bins
+
 
 def filter_data(selected_weather):
     logger.info("Filtering data for weather condition: %s", selected_weather)
@@ -78,17 +112,13 @@ def filter_data(selected_weather):
 
 filtered = filter_data("Clear") # a global variable to hold filtered data
 
-filtered_bins = bin_data_by_h3(filtered) # a global variable to hold the current
+# TODO this needs to match the intitial plot type
+filtered_bins = bin_data_by_state(filtered) # a global variable to hold the current
 logger.debug("Initial binned data size: %d", filtered_bins.shape[0])
 # binned data
 
 # Get unique weather conditions for dropdown
 weather_options = [{'label': w, 'value': w} for w in sorted(traffic['Weather_Condition'].dropna().unique())]
-
-
-
-
-
 
 
 
@@ -150,6 +180,7 @@ def create_scattermap_figure(df, zoom=3, center=None):
                        marker_color='black')
     return fig
 
+
 @app.callback(Output('filtered-state', 'value'),
               [Input('weather-dropdown', 'value')],
               prevent_initial_call=True)
@@ -160,9 +191,13 @@ def refilter_data(selected_weather):
     # If hexbin, update the binned data
     # If scatterplot, rebuild the spatial index
     global current_plot_type
+    global filtered_bins
     if current_plot_type == 'hexbin':
-        global filtered_bins
         filtered_bins = bin_data_by_h3(filtered)
+    elif current_plot_type == 'county':
+        filtered_bins = bin_data_by_county(filtered)
+    elif current_plot_type == 'state':
+        filtered_bins = bin_data_by_state(filtered)
     elif current_plot_type == 'scatter':
         global sindex
         sindex = filtered.sindex  # rebuild spatial index for filtered data
@@ -171,16 +206,12 @@ def refilter_data(selected_weather):
 
 
 # called by the more general update_figure function below
-def update_scattermap_figure(filtered_state, map_layout):
+def update_scattermap_figure(filtering_state, map_layout):
 
-    # filtered_state is a dummy variable to trigger updates whenever we filter
+    # filtering_state is a dummy variable to trigger updates whenever we filter
     # so we don't need to pass around the whole dataframe in a dcc.Store
     global filtered
-    
-    if map_layout is None or len(map_layout) == 0:
-        map_layout = [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM]
-    lat, lng = map_layout[0]
-    zoom = map_layout[1]
+    lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
 
     # only show points within the current map bounds
     within_bounds = filter_geographic_bounds(filtered, lat=lat, lng=lng)
@@ -195,9 +226,10 @@ def update_scattermap_figure(filtered_state, map_layout):
 # Updating of the map based on zoom level and panning
 @app.callback(
     Output('map_layout', 'data'),
-    Input('map_figure', 'relayoutData')
+    [Input('map_figure', 'relayoutData'),
+     State('plot-type-radio', 'value')],
 )
-def update_map_on_relayout(relayout_data):
+def update_map_on_relayout(relayout_data, selected_plot_type):
     if relayout_data is None:
         return dash.no_update
 
@@ -214,10 +246,10 @@ def update_map_on_relayout(relayout_data):
 
     # Check if we need to switch plot types
     if relayout_data['map.zoom'] < SCATTER_PLOT_ZOOM_THRESHOLD:
-        if current_plot_type != 'hexbin':
-            logger.info("Switching to hexbin plot")
+        if current_plot_type == 'scatter': # see if we shoud switch back to selected plot type
+            logger.info("Switching back to selected plot type: %s", selected_plot_type)
+            current_plot_type = selected_plot_type
             should_update_map = True
-        current_plot_type = 'hexbin'
     else:
         if current_plot_type != 'scatter':
             logger.info("Switching to scatter plot")
@@ -225,7 +257,7 @@ def update_map_on_relayout(relayout_data):
             global sindex
             sindex = filtered.sindex
             should_update_map = True
-        current_plot_type = 'scatter'
+            current_plot_type = 'scatter'
 
     if 'map.center' in relayout_data and 'map.zoom' in relayout_data:
         if (abs(relayout_data['map.center']['lat'] - map_layout_on_last_geofilter[0][0]) > max_dist or
@@ -246,10 +278,18 @@ def update_map_on_relayout(relayout_data):
     return map_layout
 
 
+def extract_lat_lng_zoom_from_layout(layout):
+    if layout is None or len(layout) <= 1:
+        return START_COORDINATES['lat'], START_COORDINATES['lon'], START_ZOOM
+    lat, lng = layout[0]
+    zoom = layout[1]
+    return lat, lng, zoom
+
+
 def create_hexbin_figure(df, zoom=3, center=None):
     fig = px.choropleth_map(
         df,
-        geojson=geojson_obj,
+        geojson=h3_cells_geojson,
         locations='h3cell',
         featureidkey='properties.h3cell',
         color='n_accidents',
@@ -266,36 +306,98 @@ def create_hexbin_figure(df, zoom=3, center=None):
     fig.update_traces(marker_line_width=0)
     return fig
 
+
 # called by the more general update_figure function below
-def update_hexbin_figure(filtered_state, map_layout):
-    # filtered_state is a dummy variable to trigger updates whenever we filter
+def update_hexbin_figure(filtering_state, map_layout):
+    # filtering_state is a dummy variable to trigger updates whenever we filter
     global filtered_bins
-    if map_layout is None or len(map_layout) <= 1:
-        map_layout = [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM]
-    lat, lng = map_layout[0]
-    zoom = map_layout[1]
+    lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
     fig = create_hexbin_figure(filtered_bins, zoom=zoom, center={"lat": lat, "lon": lng})
     return fig
 
 
+def create_county_figure(df, zoom=3, center=None):
+    fig = px.choropleth_map(
+        df,
+        geojson=counties_geojson,
+        locations='GEOID',
+        featureidkey='properties.GEOID',
+        color='n_accidents',
+        color_continuous_scale="Viridis",
+        map_style="light",
+        zoom=zoom,
+        range_color=[0, df['n_accidents'].quantile(0.9)],
+        center=center,
+        hover_data={'NAME': True, 'n_accidents': True},
+        opacity=0.3,
+        width=1000,
+        height=700
+    )
+    return fig
+
+
+def update_county_figure(filtering_state, map_layout):
+    # filtering_state is a dummy variable to trigger updates whenever we filter
+    global filtered_bins
+    lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
+    fig = create_county_figure(filtered_bins, zoom=zoom, center={"lat": lat, "lon": lng})
+    return fig
+
+
+def create_state_figure(df, zoom=3, center=None):
+    fig = px.choropleth_map(
+        df,
+        geojson=states_geojson,
+        locations='name',
+        featureidkey='properties.name',
+        color='n_accidents',
+        color_continuous_scale="Viridis",
+        map_style="light",
+        zoom=zoom,
+        range_color=[0, df['n_accidents'].quantile(0.9)],
+        center=center,
+        hover_data={'name': True, 'n_accidents': True},
+        opacity=0.3,
+        width=1000,
+        height=700
+    )
+    return fig
+
+
+def update_state_figure(filtering_state, map_layout):
+    # filtering_state is a dummy variable to trigger updates whenever we filter
+    global filtered_bins
+    lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
+    fig = create_state_figure(filtered_bins, zoom=zoom, center={"lat": lat, "lon": lng})
+    return fig
+
+
+
 @app.callback(Output('map_figure', 'figure'),
               [Input('filtered-state', 'value'),
-               Input('map_layout', 'data')],
+               Input('map_layout', 'data'),
+               Input('plot-type-radio', 'value'),
+               State('weather-dropdown', 'value')],
               prevent_initial_call=True)
-def update_figure(filtered_state, layout):
-    # filtered_state is a dummy variable to trigger updates whenever we filter
+def update_figure(filtering_state, layout, selected_plot_type, weather_condition):
+    # filtering_state is a dummy variable to trigger updates whenever we filter
     global current_plot_type
+
+    # If we are within scatter plot zoom range, always use scatter plot
+    # Otherwise, use the selected plot type
     if current_plot_type == 'scatter':
-        return update_scattermap_figure(filtered_state, layout)
+        return update_scattermap_figure(filtering_state, layout)
+    else:
+        if selected_plot_type != current_plot_type:
+            logger.info("Switching to selected plot type: %s", selected_plot_type)
+            current_plot_type = selected_plot_type
+            refilter_data(weather_condition)
+    if current_plot_type == 'county':
+        return update_county_figure(filtering_state, layout)
     elif current_plot_type == 'hexbin':
-        return update_hexbin_figure(filtered_state, layout)
-
-
-# initial_scattermap_data = filter_geographic_bounds(
-#     filtered, 
-#     lat=START_COORDINATES['lat'], lng=START_COORDINATES['lon'])
-# print(f"Initial data size: {initial_scattermap_data.shape}")
-# App layout
+        return update_hexbin_figure(filtering_state, layout)
+    elif current_plot_type == 'state':
+        return update_state_figure(filtering_state, layout)
 
 app.layout = html.Div([
     html.H1("Traffic Incidents by Weather Condition"),
@@ -305,8 +407,18 @@ app.layout = html.Div([
         value='Clear',
         clearable=False
     ),
+    dcc.RadioItems(
+        id='plot-type-radio',
+        options=[
+            {'label': 'State', 'value': 'state'},
+            {'label': 'County', 'value': 'county'},
+            {'label': 'Hexagon', 'value': 'hexbin'},
+        ],
+        value='state',
+        labelStyle={'display': 'inline-block', 'margin-right': '20px'}
+    ),
     dcc.Graph(id="map_figure",
-              figure = create_hexbin_figure(filtered_bins,
+              figure = create_state_figure(filtered_bins,
                  zoom=START_ZOOM, center=START_COORDINATES)),
     dcc.Input(id='filtered-state', type='hidden', value='init'),
     # Format is [[lat, lng], zoom]

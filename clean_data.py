@@ -211,6 +211,7 @@ geodata.to_file("data/counties_processed.geojson", driver='GeoJSON')
 
 
 ##################################################### Added statesArea.csv to main pull it into data !!!!!!!!!!!!!!!!!!!!!!!!
+import pandas as pd
 area = pd.Series([1]*50,dtype=int)
 area = pd.read_csv("data/statesArea.csv", sep=",",header=None)
 area = area.rename(columns={0:"name",1:"area"})
