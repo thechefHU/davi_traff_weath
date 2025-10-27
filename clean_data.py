@@ -231,5 +231,33 @@ states.to_json("data/us-states_processed.json")
 
 
 print("Saving as data/traffic.parquet")
+##################################################### Added weather groups as a new column
+conditions = [
+    traffic['Weather_Condition'].str.contains('T-Storm|Thunder|Storm', case=False, na=False),
+    traffic['Weather_Condition'].str.contains('Hail|Sleet|Ice', case=False, na=False),
+    traffic['Weather_Condition'].str.contains('Snow|Wintry',case=False, na=False),
+    traffic['Weather_Condition'].str.contains('Rain|Drizzle|Shower', case=False, na=False),
+    traffic['Weather_Condition'].str.contains('Fog|Mist', case=False, na=False),
+    traffic['Weather_Condition'].str.contains('Wind|Squall|Tornado',case=False, na=False),
+    traffic['Weather_Condition'].str.contains('Dust|Smoke|Sand',case=False, na=False),
+    traffic['Weather_Condition'].str.contains('Cloud|Haze|Overcast', case=False, na=False),
+    traffic['Weather_Condition'].str.contains('Clear|Sunny|Fair', case=False, na=False)
+]
+
+choices = [
+    'Thunderstorm',
+    'Hail',
+    'Snow',
+    'Rain',
+    'Fog',
+    'Wind',
+    'Dust/Smoke',
+    'Cloudy',
+    'Clear'
+    
+]
+
+
+traffic['Weather_Group'] = np.select(conditions, choices, default='Other')
 traffic.to_parquet(data_folder / "traffic.parquet", engine="fastparquet")
 print("Done!")
