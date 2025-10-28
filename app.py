@@ -10,11 +10,13 @@ import logging
 import json
 from shapely.geometry import Point
 from shapely import box
+from datetime import date
 
 current_plot_type = 'county'  # or 'scatter' or 'county' or 'state'
 
 START_COORDINATES = {"lat": 37.0902, "lon": -95.7129}
 START_ZOOM = 3
+
 
 SCATTER_PLOT_ZOOM_THRESHOLD = 7  # zoom level above which we switch to scatter plot
 
@@ -34,6 +36,8 @@ logger.info("\nWelcome to the coolest dashboard ever!")
 data_folder = Path("data")
 logger.info("Loading data...")
 
+filter_dict = {}  # global variable to hold current filter conditions
+
 # Load information about the H3 cells
 h3_df = pd.read_parquet(data_folder / "h3_cells.parquet", engine="fastparquet")
 with open(data_folder / "h3_cells.geojson", "r") as f:
@@ -48,7 +52,7 @@ with open(data_folder / "us-states.json", "r") as f:
     states_geojson = json.load(f)
 # Load the traffic data
 traffic = pd.read_parquet(data_folder / "traffic.parquet", engine="fastparquet")
-#traffic = traffic.sample(200000)  # Use a subset for performance
+traffic = traffic.sample(200000)  # Use a subset for performance
 logger.info("Only keeping relevant columns...")
 # ADD MORE AS NEEDED
 relevant_columns = [
@@ -69,6 +73,9 @@ traffic = gpd.GeoDataFrame(
     geometry=gpd.points_from_xy(traffic.Start_Lng, traffic.Start_Lat),
 )
 sindex = traffic.sindex
+
+min_date = traffic['Start_Time'].min().date()
+max_date = traffic['Start_Time'].max().date()
 
 
 # TODO:  hexagons without accidents are thrown arway in clean data script
@@ -104,13 +111,19 @@ def bin_data_by_state(df):
     return filtered_bins
 
 
-def filter_data(selected_weather):
-    logger.info("Filtering data for weather condition: %s", selected_weather)
-    filtered_traffic = traffic[traffic['Weather_Condition'] == selected_weather]
+def filter_data(filter_dict):
+    if len(filter_dict) == 0:
+        logger.info("No filters applied, returning original data")
+        return traffic
     
+    # Construct the filter string by joining the items
+    filter_string = " & ".join(f"({value})" for _, value in filter_dict.items())
+
+    logger.info("Filtering data with condition: %s", filter_string)
+    filtered_traffic = traffic.query(filter_string)
     return filtered_traffic
 
-filtered = filter_data("Clear") # a global variable to hold filtered data
+filtered = filter_data(filter_dict) # a global variable to hold filtered data
 
 # TODO this needs to match the intitial plot type
 filtered_bins = bin_data_by_state(filtered) # a global variable to hold the current
@@ -181,13 +194,37 @@ def create_scattermap_figure(df, zoom=3, center=None):
     return fig
 
 
-@app.callback(Output('filtered-state', 'value'),
+@app.callback(Output('filter-ui-trigger', 'value', allow_duplicate=True),
               [Input('weather-dropdown', 'value')],
               prevent_initial_call=True)
-def refilter_data(selected_weather):
-    global filtered
-    filtered = filter_data(selected_weather)
+def weather_dropdown_updated(selected_weather):
+    global filter_dict
+    filter_dict["weather"] = f"Weather_Condition == '{selected_weather}'"
 
+    return time() # return a dummy value to trigger the next callback
+
+
+@app.callback(Output('filter-ui-trigger', 'value', allow_duplicate=True),
+                [Input('date-range-slider', 'value')],
+                prevent_initial_call=True)
+def time_range_updated(selected_range):
+    global filter_dict
+    min_date, max_date = selected_range
+    min_date = date.fromordinal(int(min_date))
+    max_date = date.fromordinal(int(max_date))
+    filter_dict["time"] = f"Start_Time >= '{min_date}' & Start_Time <= '{max_date}'"
+
+    return time() # return a dummy value to trigger the next callback
+
+@app.callback(Output('filtered-state', 'value'),
+              Input('filter-ui-trigger', 'value'),
+              prevent_initial_call=True)
+def refilter_data(filter_ui_trigger):
+    # filter_ui_trigger is a dummy variable to trigger updates whenever we change the filter UI
+    global filtered
+    global filter_dict
+
+    filtered = filter_data(filter_dict)
     # If hexbin, update the binned data
     # If scatterplot, rebuild the spatial index
     global current_plot_type
@@ -376,10 +413,9 @@ def update_state_figure(filtering_state, map_layout):
 @app.callback(Output('map_figure', 'figure'),
               [Input('filtered-state', 'value'),
                Input('map_layout', 'data'),
-               Input('plot-type-radio', 'value'),
-               State('weather-dropdown', 'value')],
+               Input('plot-type-radio', 'value')],
               prevent_initial_call=True)
-def update_figure(filtering_state, layout, selected_plot_type, weather_condition):
+def update_figure(filtering_state, layout, selected_plot_type):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     global current_plot_type
 
@@ -391,7 +427,8 @@ def update_figure(filtering_state, layout, selected_plot_type, weather_condition
         if selected_plot_type != current_plot_type:
             logger.info("Switching to selected plot type: %s", selected_plot_type)
             current_plot_type = selected_plot_type
-            refilter_data(weather_condition)
+            global filter_dict
+            refilter_data(filter_dict)
     if current_plot_type == 'county':
         return update_county_figure(filtering_state, layout)
     elif current_plot_type == 'hexbin':
@@ -399,28 +436,90 @@ def update_figure(filtering_state, layout, selected_plot_type, weather_condition
     elif current_plot_type == 'state':
         return update_state_figure(filtering_state, layout)
 
-app.layout = html.Div([
-    html.H1("Traffic Incidents by Weather Condition"),
-    dcc.Dropdown(
-        id='weather-dropdown',
-        options=weather_options,
-        value='Clear',
-        clearable=False
-    ),
-    dcc.RadioItems(
-        id='plot-type-radio',
-        options=[
-            {'label': 'State', 'value': 'state'},
-            {'label': 'County', 'value': 'county'},
-            {'label': 'Hexagon', 'value': 'hexbin'},
-        ],
-        value='state',
-        labelStyle={'display': 'inline-block', 'margin-right': '20px'}
-    ),
-    dcc.Graph(id="map_figure",
-              figure = create_state_figure(filtered_bins,
-                 zoom=START_ZOOM, center=START_COORDINATES)),
+
+
+app.layout = html.Div(style={'height': '100vh'}, children=[
+    html.Div(style={'display': 'flex', 'height': '100%'}, children=[
+        # Left slim Filters panel
+        html.Div(style={
+            'width': '40%',
+            'minWidth': '240px',
+            'padding': '6px',
+            'boxSizing': 'border-box',
+            'borderRight': '1px solid #e6e6e6',
+            'overflowY': 'auto'
+        }, children=[
+            html.H2("Filters"),
+            html.H3("Weather Condition"),
+            dcc.Dropdown(
+                id='weather-dropdown',
+                options=weather_options,
+                value='Clear',
+                clearable=False,
+                style={'marginBottom': '12px'}
+            ),
+            html.H3("Date"),
+            dcc.RangeSlider(
+                id='date-range-slider',
+                min=min_date.toordinal(),
+                max=max_date.toordinal(),
+                value=[min_date.toordinal(), max_date.toordinal()],
+                marks={date.toordinal(): date.strftime('%Y') for date in pd.date_range(min_date, max_date, freq='YE')}, # Show all years as marks
+            ),
+            html.Div(
+                id='selected-date-range',
+                children=f"Selected range: NOT IMPLEMENTED YET",
+                style={'marginTop': '12px', 'fontWeight': '600'}
+            )
+        ]),
+
+        # Middle large map panel
+        html.Div(style={
+            'flex': '1',
+            'padding': '8px',
+            'boxSizing': 'border-box',
+            'display': 'flex',
+            'flexDirection': 'column',
+            'alignItems': 'stretch',
+            'justifyContent': 'stretch'
+        }, children=[
+            dcc.RadioItems(
+                id='plot-type-radio',
+                options=[
+                    {'label': 'State', 'value': 'state'},
+                    {'label': 'County', 'value': 'county'},
+                    {'label': 'Hexagon', 'value': 'hexbin'},
+                ],
+                value='state',
+                labelStyle={'display': 'inline-block', 'marginBottom': '6px'}
+            ),
+            dcc.Graph(
+                id="map_figure",
+                figure=create_state_figure(filtered_bins, zoom=START_ZOOM, center=START_COORDINATES),
+                style={'flex': '1', 'minHeight': '0'}  # allow the graph to fill vertical space
+            )
+        ]),
+
+        # Right panel for plots
+        html.Div(style={
+            'width': '35%',
+            'minWidth': '220px',
+            'padding': '12px',
+            'boxSizing': 'border-box',
+            'borderLeft': '1px solid #e6e6e6',
+            'overflowY': 'auto'
+        }, children=[
+            html.H2("Plots"),
+            # placeholder for additional plots (add dcc.Graph or other components)
+            html.Div(id='plots-container', children=[
+                html.P("Add plot components here.")
+            ])
+        ]),
+    ]),
+
+    # Hidden/input stores (kept at root)
     dcc.Input(id='filtered-state', type='hidden', value='init'),
+    dcc.Input(id='filter-ui-trigger', type='hidden', value='init'),
     # Format is [[lat, lng], zoom]
     dcc.Store(id='map_layout', data=[
         [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM]
