@@ -7,31 +7,24 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html, Input, Output, State
 import plotly.express as px
 import pandas as pd
-
-
-def get_season(month):
-    if month in [12, 1, 2]:
-        return "Winter"
-    elif month in [3, 4, 5]:
-        return "Spring"
-    elif month in [6, 7, 8]:
-        return "Summer"
-    else:
-        return "Fall"
+import global_state as gs
 
 # Register callbacks in a function
 def register_callbacks(app):
     @app.callback(
         Output("time-chart", "figure"),
-        Input("time-granularity", "value")
+        [Input("time-granularity", "value"),
+         Input("filtered-state", "value")]
     )
-    def update_graph(granularity):
+    def update_graph(granularity, filtering_state):
+        # filtering_state is just a dummy input to trigger the update when filters change
+        # (this only happens in the main app)
         fig = update_chart(granularity)
         return fig
 
 
 def update_chart(granularity):
-    counts = df.groupby(granularity).size().reset_index(name="count")
+    counts = gs.get_data().groupby(granularity).size().reset_index(name="count")
     # nice ordering
     if granularity == "weekday":
         order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
@@ -81,7 +74,9 @@ layout = dbc.Col(
             figure={}, # Fix for initial load cut-off
             config={'responsive': True},
             className="flex-grow-1" # Bootstrap class for flex-grow: 1
-        )
+        ),
+        # Hidden div for filtering state - temporary placeholder, overwritten in main app
+        dcc.Input(id="filtered-state", type="hidden", value="init")
     ], className="d-flex flex-column h-100"), # Flex column, height 100%
     width=6,
     className="p-3",
@@ -93,10 +88,8 @@ layout = dbc.Col(
 # If this file is run, just do a simple test load of the data.
 # (to test the plot quickly)
 if __name__ == "__main__":
-    app = dash.Dash(__name__)
-    file = 'data/traffic.parquet'
-    df = pd.read_parquet(file, engine='fastparquet')
-    df = df.sample(1000000)
+    gs.load_data(data_folder="data/", subset_accidents=100000)  # load a subset for faster testing
+    app = dash.Dash(__name__, suppress_callback_exceptions=True) 
     app.layout = layout
     register_callbacks(app)
-    app.run(debug=True)
+    app.run(debug=True) 

@@ -13,6 +13,8 @@ import global_state as gs
 from shapely.geometry import Point
 from shapely import box
 from datetime import date
+import chart_accidents_over_time as chart_time
+from dash_resizable_panels import PanelGroup, Panel, PanelResizeHandle
 
 
 current_plot_type = 'county'  # or 'scatter' or 'county' or 'state'
@@ -344,9 +346,12 @@ def update_figure(filtering_state, layout, selected_plot_type):
 
 
 app.layout = html.Div(style={'height': '100vh'}, children=[
-    html.Div(style={'display': 'flex', 'height': '100%'}, children=[
+    PanelGroup(
+        id='panel-group',
+        direction='horizontal',
+        children=[
         # Left slim Filters panel
-        html.Div(style={
+        Panel(style={
             'width': '40%',
             'minWidth': '240px',
             'padding': '6px',
@@ -377,9 +382,9 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                 style={'marginTop': '12px', 'fontWeight': '600'}
             )
         ]),
-
+        PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
         # Middle large map panel
-        html.Div(style={
+        Panel(style={
             'flex': '1',
             'padding': '8px',
             'boxSizing': 'border-box',
@@ -404,9 +409,9 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                 style={'flex': '1', 'minHeight': '0'}  # allow the graph to fill vertical space
             )
         ]),
-
+        PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
         # Right panel for plots
-        html.Div(style={
+        Panel(style={
             'width': '35%',
             'minWidth': '220px',
             'padding': '12px',
@@ -417,7 +422,8 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
             html.H2("Plots"),
             # placeholder for additional plots (add dcc.Graph or other components)
             html.Div(id='plots-container', children=[
-                html.P("Add plot components here.")
+                html.P("Add plot components here."),
+                chart_time.layout
             ])
         ]),
     ]),
@@ -430,6 +436,9 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
         [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM]
     ])
 ])
+
+# Register callbacks from other modules
+chart_time.register_callbacks(app)
 
 if __name__ == '__main__':
     app.run(debug=True)

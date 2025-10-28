@@ -83,6 +83,25 @@ traffic["Nautical_Twilight"] = traffic["Nautical_Twilight"].astype("category")
 traffic["Astronomical_Twilight"] = traffic["Astronomical_Twilight"].astype("category")
 print("\nType conversion done")
 
+print("Creating new time columns")
+
+traffic["hour"] = traffic["Start_Time"].dt.hour
+traffic["weekday"] = traffic["Start_Time"].dt.day_name()
+traffic["month"] = traffic["Start_Time"].dt.month
+traffic["year"] = traffic["Start_Time"].dt.year
+
+# Seasons
+def get_season(month):
+    if month in [12, 1, 2]:
+        return "Winter"
+    elif month in [3, 4, 5]:
+        return "Spring"
+    elif month in [6, 7, 8]:
+        return "Summer"
+    else:
+        return "Fall"
+traffic["season"] = traffic["month"].apply(get_season)
+
 print(f"New dtypes")
 print(traffic.dtypes)
 

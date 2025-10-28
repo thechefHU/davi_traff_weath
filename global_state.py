@@ -37,7 +37,7 @@ def load_data(data_folder="/data/", subset_accidents = None, logger=None):
         'ID', 'Severity', 'Start_Time', 'End_Time', 'Start_Lat', 'Start_Lng',
         'End_Lat', 'End_Lng', 'Distance(mi)', #'Description',
         'County', 'State', 'Zipcode', 'Timezone', 'Weather_Condition', "h3cell",
-        "geoid"
+        "geoid", 'hour', 'weekday', 'month', 'year', 'season'
     ]
     _current_data = _current_data[relevant_columns]
     # Set Start_Lat and Start_Lng to float32 to save memory
