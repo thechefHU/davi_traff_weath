@@ -1,28 +1,24 @@
 import dash
 from dash import html, Input, Output, State, dcc
-from pathlib import Path
-from matplotlib import cm
 import plotly.express as px
 import pandas as pd
-import geopandas as gpd
+import geopandas as gp
 from time import time
-import numpy as np
 import logging
-import json
 import global_state as gs
-from shapely.geometry import Point
 from shapely import box
 from datetime import date
-import chart_accidents_over_time as chart_time
+import dash_bootstrap_components as dbc
 from dash_resizable_panels import PanelGroup, Panel, PanelResizeHandle
 
+# Import the chart layouts here
+import chart_accidents_over_time as chart_time
+import chart_accidents_by_weather as chart_weather
 
+# Setup variables
 current_plot_type = 'county'  # or 'scatter' or 'county' or 'state'
-
 START_COORDINATES = {"lat": 37.0902, "lon": -95.7129}
 START_ZOOM = 3
-
-
 SCATTER_PLOT_ZOOM_THRESHOLD = 7  # zoom level above which we switch to scatter plot
 
 # global variable to hold the last map layout used for geographic filtering
@@ -30,7 +26,11 @@ SCATTER_PLOT_ZOOM_THRESHOLD = 7  # zoom level above which we switch to scatter p
 # around the same area
 map_layout_on_last_geofilter = [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM]
 
-external_stylesheets = [] 
+# --- Initialize the Dash App with Bootstrap and FontAwesome for icons ---
+# Dash will automatically serve any CSS file placed in an 'assets' folder.
+
+#external_stylesheets = [dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME]
+external_stylesheets = [dbc.icons.FONT_AWESOME]
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 # Setup logging
@@ -49,7 +49,7 @@ min_date = gs.get_data()['Start_Time'].min().date()
 max_date = gs.get_data()['Start_Time'].max().date()
 
 # Get unique weather conditions for dropdown
-weather_options = [{'label': w, 'value': w} for w in sorted(gs.get_data()['Weather_Condition'].dropna().unique())]
+weather_options = [{'label': w, 'value': w} for w in sorted(gs.get_data()['Weather_Group'].dropna().unique())]
 
 
 def filter_geographic_bounds(df, lat=None, lng=None, width=6, height=4.0):
@@ -116,7 +116,7 @@ def create_scattermap_figure(df, zoom=3, center=None):
               prevent_initial_call=True)
 def weather_dropdown_updated(selected_weather):
     global filter_dict
-    filter_dict["weather"] = f"Weather_Condition == '{selected_weather}'"
+    filter_dict["weather"] = f"Weather_Group == '{selected_weather}'"
 
     return time() # return a dummy value to trigger the next callback
 
@@ -351,14 +351,8 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
         direction='horizontal',
         children=[
         # Left slim Filters panel
-        Panel(style={
-            'width': '40%',
-            'minWidth': '240px',
-            'padding': '6px',
-            'boxSizing': 'border-box',
-            'borderRight': '1px solid #e6e6e6',
-            'overflowY': 'auto'
-        }, children=[
+        Panel(defaultSizePercentage=20,
+            children=[
             html.H2("Filters"),
             html.H3("Weather Condition"),
             dcc.Dropdown(
@@ -392,7 +386,9 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
             'flexDirection': 'column',
             'alignItems': 'stretch',
             'justifyContent': 'stretch'
-        }, children=[
+        }, 
+        defaultSizePercentage=50,
+        children=[
             dcc.RadioItems(
                 id='plot-type-radio',
                 options=[
@@ -412,19 +408,13 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
         PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
         # Right panel for plots
         Panel(style={
-            'width': '35%',
-            'minWidth': '220px',
-            'padding': '12px',
-            'boxSizing': 'border-box',
-            'borderLeft': '1px solid #e6e6e6',
             'overflowY': 'auto'
-        }, children=[
+        }, 
+        children=[
             html.H2("Plots"),
-            # placeholder for additional plots (add dcc.Graph or other components)
-            html.Div(id='plots-container', children=[
-                html.P("Add plot components here."),
-                chart_time.layout
-            ])
+            html.P("Add plot components here."),
+            chart_time.layout,
+            chart_weather.layout
         ]),
     ]),
 
@@ -439,6 +429,9 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
 
 # Register callbacks from other modules
 chart_time.register_callbacks(app)
+chart_weather.register_callbacks(app)
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)

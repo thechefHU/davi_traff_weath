@@ -49,10 +49,7 @@ def update_chart(granularity):
     return fig
 
 
-layout = dbc.Col(
-    # Use flexbox to manage vertical space. This container
-    # will be a vertical flexbox that fills the height.
-    html.Div([
+layout = html.Div([
         html.H4("Accidents Over Time", className="text-center"),
         dcc.RadioItems(
             id="time-granularity",
@@ -75,13 +72,9 @@ layout = dbc.Col(
             config={'responsive': True},
             className="flex-grow-1" # Bootstrap class for flex-grow: 1
         ),
-        # Hidden div for filtering state - temporary placeholder, overwritten in main app
-        dcc.Input(id="filtered-state", type="hidden", value="init")
-    ], className="d-flex flex-column h-100"), # Flex column, height 100%
-    width=6,
-    className="p-3",
-    style={'height': '100%'}
-)
+    ])
+
+
 
 
 
@@ -90,6 +83,10 @@ layout = dbc.Col(
 if __name__ == "__main__":
     gs.load_data(data_folder="data/", subset_accidents=100000)  # load a subset for faster testing
     app = dash.Dash(__name__, suppress_callback_exceptions=True) 
-    app.layout = layout
+    app.layout = html.Div([
+        layout,
+        # Hidden input for filtering state - temporary placeholder, overwritten in main app
+        dcc.Input(id="filtered-state", type="hidden", value="init")
+    ])
     register_callbacks(app)
     app.run(debug=True) 
