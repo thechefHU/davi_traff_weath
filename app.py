@@ -39,8 +39,8 @@ h3_df = pd.read_parquet(data_folder / "h3_cells.parquet", engine="fastparquet")
 with open(data_folder / "h3_cells.geojson", "r") as f:
     h3_cells_geojson = json.load(f)
 # Load information about the counties
-counties_df = gpd.read_file(data_folder / "counties.geojson")
-with open(data_folder / "counties.geojson", "r") as f:
+counties_df = gpd.read_file(data_folder / "counties_processed.geojson")
+with open(data_folder / "counties_processed.geojson", "r") as f:
     counties_geojson = json.load(f)
 # Load information about the states
 states_df = gpd.read_file(data_folder / "us-states.json")
@@ -48,14 +48,14 @@ with open(data_folder / "us-states.json", "r") as f:
     states_geojson = json.load(f)
 # Load the traffic data
 traffic = pd.read_parquet(data_folder / "traffic.parquet", engine="fastparquet")
-#traffic = traffic.sample(200000)  # Use a subset for performance
+traffic = traffic.sample(200000)  # Use a subset for performance
 logger.info("Only keeping relevant columns...")
 # ADD MORE AS NEEDED
 relevant_columns = [
     'ID', 'Severity', 'Start_Time', 'End_Time', 'Start_Lat', 'Start_Lng',
     'End_Lat', 'End_Lng', 'Distance(mi)', #'Description',
     'County', 'State', 'Zipcode', 'Timezone', 'Weather_Condition', "h3cell",
-    "geoid"
+    "geoid", "Crossing", "Junction", "Stop", "Traffic_Signal","Civil_Twilight"
 ]
 traffic = traffic[relevant_columns]
 # Set Start_Lat and Start_Lng to float32 to save memory
@@ -70,7 +70,6 @@ traffic = gpd.GeoDataFrame(
 )
 sindex = traffic.sindex
 
-
 # TODO:  hexagons without accidents are thrown arway in clean data script
 def bin_data_by_h3(df):
     logger.info("Aggregating based on H3 cells...")
@@ -78,7 +77,7 @@ def bin_data_by_h3(df):
     filtered_grouped = df.groupby('h3cell', observed=False).size().reset_index(name='n_accidents')
     # set n_accidents in h3_df based on filtered data
     filtered_cells = h3_df[["h3cell", "h3_lat", "h3_lng"]].merge(filtered_grouped, on='h3cell', how='left')
-    filtered_cells['n_accidents'] = filtered_cells['n_accidents'].fillna(0)
+    filtered_cells['n_accidents'] =  filtered_cells['n_accidents'].fillna(1) #np.log(filtered_cells['n_accidents'].fillna(1))
     return filtered_cells
 
 
@@ -87,9 +86,9 @@ def bin_data_by_county(df):
     # Aggregate data based on counties
     filtered_grouped = df.groupby('geoid').size().reset_index(name='n_accidents')
     # set n_accidents in counties_df based on filtered data
-    filtered_bins = counties_df[["NAME", "GEOID"]].merge(
+    filtered_bins = counties_df[["NAME", "GEOID","Density","Population"]].merge(
         filtered_grouped, left_on='GEOID', right_on='geoid', how='left')
-    filtered_bins['n_accidents'] = filtered_bins['n_accidents'].fillna(0)
+    filtered_bins['n_accidents'] = filtered_bins['n_accidents'].fillna(1) #np.log(filtered_bins['n_accidents'].fillna(1))
     return filtered_bins
 
 
@@ -100,26 +99,34 @@ def bin_data_by_state(df):
     # set n_accidents in states_df based on filtered data
     filtered_bins = states_df[["name", "id"]].merge(
         filtered_grouped, left_on='id', right_on='State', how='left')
-    filtered_bins['n_accidents'] = filtered_bins['n_accidents'].fillna(0)
+    filtered_bins['n_accidents'] = filtered_bins['n_accidents'].fillna(1) #np.log(filtered_bins['n_accidents'].fillna(1))
     return filtered_bins
 
 
-def filter_data(selected_weather):
+def filter_data(selected_weather,Surrounding,Time):
     logger.info("Filtering data for weather condition: %s", selected_weather)
-    filtered_traffic = traffic[traffic['Weather_Condition'] == selected_weather]
-    
-    return filtered_traffic
+    returnData = traffic
+    if selected_weather != "Any":
+        returnData =  returnData[returnData['Weather_Condition'] == selected_weather]
+    if Surrounding != 'None':
+        returnData = returnData[returnData[Surrounding]==True]
+    if Time != "Any":
+        returnData = returnData[returnData["Civil_Twilight"]==Time]
+    return returnData
 
-filtered = filter_data("Clear") # a global variable to hold filtered data
+
+filtered = filter_data('Any','None',"Any") # a global variable to hold filtered data
 
 # TODO this needs to match the intitial plot type
 filtered_bins = bin_data_by_state(filtered) # a global variable to hold the current
+
+
 logger.debug("Initial binned data size: %d", filtered_bins.shape[0])
 # binned data
 
 # Get unique weather conditions for dropdown
 weather_options = [{'label': w, 'value': w} for w in sorted(traffic['Weather_Condition'].dropna().unique())]
-
+weather_options.append({'label':'Any','value':'Any'})
 
 
 def filter_geographic_bounds(df, lat=None, lng=None, width=6, height=4.0):
@@ -182,11 +189,13 @@ def create_scattermap_figure(df, zoom=3, center=None):
 
 
 @app.callback(Output('filtered-state', 'value'),
-              [Input('weather-dropdown', 'value')],
+              [Input('weather-dropdown', 'value'),
+              Input('Surrounding', 'value'),
+              Input('Time', 'value'),],
               prevent_initial_call=True)
-def refilter_data(selected_weather):
+def refilter_data(selected_weather,Surrounding,Time):
     global filtered
-    filtered = filter_data(selected_weather)
+    filtered = filter_data(selected_weather,Surrounding,Time)
 
     # If hexbin, update the binned data
     # If scatterplot, rebuild the spatial index
@@ -292,14 +301,14 @@ def create_hexbin_figure(df, zoom=3, center=None):
         geojson=h3_cells_geojson,
         locations='h3cell',
         featureidkey='properties.h3cell',
-        color='n_accidents',
+        color= np.log10(df['n_accidents']),
         color_continuous_scale="Viridis",
         map_style="light",
         zoom=zoom,
-        range_color=[0, df['n_accidents'].quantile(0.9)],
+        #range_color= [np.min(df['n_accidents']), np.max(df['n_accidents'])],
         center=center,
         hover_data={'h3cell': True, 'n_accidents': True},
-        opacity=0.3,
+        opacity=1,
         width=1000,
         height=700
     )
@@ -322,14 +331,14 @@ def create_county_figure(df, zoom=3, center=None):
         geojson=counties_geojson,
         locations='GEOID',
         featureidkey='properties.GEOID',
-        color='n_accidents',
+        color= np.log10(df['n_accidents']),
         color_continuous_scale="Viridis",
         map_style="light",
         zoom=zoom,
-        range_color=[0, df['n_accidents'].quantile(0.9)],
+        #range_color=[np.min(df['n_accidents']), np.max(df['n_accidents'])],
         center=center,
         hover_data={'NAME': True, 'n_accidents': True},
-        opacity=0.3,
+        opacity=1,
         width=1000,
         height=700
     )
@@ -350,14 +359,14 @@ def create_state_figure(df, zoom=3, center=None):
         geojson=states_geojson,
         locations='name',
         featureidkey='properties.name',
-        color='n_accidents',
+        color= np.log10(df['n_accidents']),
         color_continuous_scale="Viridis",
         map_style="light",
         zoom=zoom,
-        range_color=[0, df['n_accidents'].quantile(0.9)],
+        #range_color=[np.min(df['n_accidents']), np.max(df['n_accidents'])], #done automatically
         center=center,
         hover_data={'name': True, 'n_accidents': True},
-        opacity=0.3,
+        opacity=1,
         width=1000,
         height=700
     )
@@ -377,9 +386,11 @@ def update_state_figure(filtering_state, map_layout):
               [Input('filtered-state', 'value'),
                Input('map_layout', 'data'),
                Input('plot-type-radio', 'value'),
-               State('weather-dropdown', 'value')],
+               State('weather-dropdown', 'value'),
+               State('Surrounding', 'value'),
+               State('Time', 'value'),],
               prevent_initial_call=True)
-def update_figure(filtering_state, layout, selected_plot_type, weather_condition):
+def update_figure(filtering_state, layout, selected_plot_type, weather_condition, Surrounding,Time):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     global current_plot_type
 
@@ -391,7 +402,7 @@ def update_figure(filtering_state, layout, selected_plot_type, weather_condition
         if selected_plot_type != current_plot_type:
             logger.info("Switching to selected plot type: %s", selected_plot_type)
             current_plot_type = selected_plot_type
-            refilter_data(weather_condition)
+            refilter_data(weather_condition, Surrounding,Time)
     if current_plot_type == 'county':
         return update_county_figure(filtering_state, layout)
     elif current_plot_type == 'hexbin':
@@ -399,32 +410,61 @@ def update_figure(filtering_state, layout, selected_plot_type, weather_condition
     elif current_plot_type == 'state':
         return update_state_figure(filtering_state, layout)
 
+width = 100#+"%"
 app.layout = html.Div([
-    html.H1("Traffic Incidents by Weather Condition"),
-    dcc.Dropdown(
-        id='weather-dropdown',
-        options=weather_options,
-        value='Clear',
-        clearable=False
-    ),
-    dcc.RadioItems(
-        id='plot-type-radio',
-        options=[
-            {'label': 'State', 'value': 'state'},
-            {'label': 'County', 'value': 'county'},
-            {'label': 'Hexagon', 'value': 'hexbin'},
-        ],
-        value='state',
-        labelStyle={'display': 'inline-block', 'margin-right': '20px'}
-    ),
+    html.H1("Traffic Incidents by Weather Condition"), #title
+    html.Div([  #Filters 
+        html.Div([ #View filter
+            html.Label("View"),
+            dcc.Dropdown(
+                id='plot-type-radio',
+                options=[
+                    {'label': 'State', 'value': 'state'},
+                    {'label': 'County', 'value': 'county'},
+                    {'label': 'Hexagon', 'value': 'hexbin'},
+                ],
+                value='state',
+                clearable=False,
+            )     
+        ],style = {'padding': 10,'width':100},),
+        html.Div([ #Weather filter
+            html.Label("Weather"),
+            dcc.Dropdown(
+                id='weather-dropdown',
+                options=weather_options,
+                value='Any',
+                clearable=False
+            ),
+        ],style = {'padding': 10,'width':250},),
+        html.Div([ #Time filter
+            html.Label("Time"),
+            dcc.Dropdown(
+                id='Time',
+                options=["Any","Day","Night"],
+                value='Any',
+                clearable=False
+            ),
+        ],style = {'padding': 10,'width':100},),
+        html.Div([ #Surrounding filter
+            html.Label("Surrounding"),
+            dcc.Dropdown(
+                options = ['None','Crossing',"Junction","Stop","Traffic_Signal"],
+                value="None",
+                id="Surrounding",
+                clearable=False,              
+            ), 
+        ],style = {'padding': 10,'width':150},),        
+    ], style = {'display': 'flex', 'flexDirection': 'row'},), #End of filters
+
+
     dcc.Graph(id="map_figure",
-              figure = create_state_figure(filtered_bins,
-                 zoom=START_ZOOM, center=START_COORDINATES)),
+        figure = create_state_figure(filtered_bins,
+        zoom=START_ZOOM, center=START_COORDINATES)),
     dcc.Input(id='filtered-state', type='hidden', value='init'),
     # Format is [[lat, lng], zoom]
     dcc.Store(id='map_layout', data=[
         [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM]
-    ])
+    ]),
 ])
 
 if __name__ == '__main__':
