@@ -1,6 +1,7 @@
 import dash
 from dash import html, Input, Output, State, dcc
 from pathlib import Path
+from matplotlib import cm
 import plotly.express as px
 import pandas as pd
 import geopandas as gpd
@@ -8,9 +9,11 @@ from time import time
 import numpy as np
 import logging
 import json
+import global_state as gs
 from shapely.geometry import Point
 from shapely import box
 from datetime import date
+
 
 current_plot_type = 'county'  # or 'scatter' or 'county' or 'state'
 
@@ -33,106 +36,18 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger('accidents-dashboard')
 logger.info("\nWelcome to the coolest dashboard ever!")
 # Load data
-data_folder = Path("data")
+
 logger.info("Loading data...")
 
 filter_dict = {}  # global variable to hold current filter conditions
 
-# Load information about the H3 cells
-h3_df = pd.read_parquet(data_folder / "h3_cells.parquet", engine="fastparquet")
-with open(data_folder / "h3_cells.geojson", "r") as f:
-    h3_cells_geojson = json.load(f)
-# Load information about the counties
-counties_df = gpd.read_file(data_folder / "counties.geojson")
-with open(data_folder / "counties.geojson", "r") as f:
-    counties_geojson = json.load(f)
-# Load information about the states
-states_df = gpd.read_file(data_folder / "us-states.json")
-with open(data_folder / "us-states.json", "r") as f:
-    states_geojson = json.load(f)
-# Load the traffic data
-traffic = pd.read_parquet(data_folder / "traffic.parquet", engine="fastparquet")
-traffic = traffic.sample(200000)  # Use a subset for performance
-logger.info("Only keeping relevant columns...")
-# ADD MORE AS NEEDED
-relevant_columns = [
-    'ID', 'Severity', 'Start_Time', 'End_Time', 'Start_Lat', 'Start_Lng',
-    'End_Lat', 'End_Lng', 'Distance(mi)', #'Description',
-    'County', 'State', 'Zipcode', 'Timezone', 'Weather_Condition', "h3cell",
-    "geoid"
-]
-traffic = traffic[relevant_columns]
-# Set Start_Lat and Start_Lng to float32 to save memory
-traffic['Start_Lat'] = traffic['Start_Lat'].astype('float32')
-traffic['Start_Lng'] = traffic['Start_Lng'].astype('float32')
-traffic['End_Lat'] = traffic['End_Lat'].astype('float32')
-traffic['End_Lng'] = traffic['End_Lng'].astype('float32')
-logger.info("Converting to GeoDataFrame and building spatial index...")
-traffic = gpd.GeoDataFrame(
-    traffic,
-    geometry=gpd.points_from_xy(traffic.Start_Lng, traffic.Start_Lat),
-)
-sindex = traffic.sindex
+gs.load_data(data_folder="data/", subset_accidents=100000)  # load a subset for faster testing
 
-min_date = traffic['Start_Time'].min().date()
-max_date = traffic['Start_Time'].max().date()
-
-
-# TODO:  hexagons without accidents are thrown arway in clean data script
-def bin_data_by_h3(df):
-    logger.info("Aggregating based on H3 cells...")
-    # Aggregate data based on H3 cells
-    filtered_grouped = df.groupby('h3cell', observed=False).size().reset_index(name='n_accidents')
-    # set n_accidents in h3_df based on filtered data
-    filtered_cells = h3_df[["h3cell", "h3_lat", "h3_lng"]].merge(filtered_grouped, on='h3cell', how='left')
-    filtered_cells['n_accidents'] = filtered_cells['n_accidents'].fillna(0)
-    return filtered_cells
-
-
-def bin_data_by_county(df):
-    logger.info("Aggregating based on counties...")
-    # Aggregate data based on counties
-    filtered_grouped = df.groupby('geoid').size().reset_index(name='n_accidents')
-    # set n_accidents in counties_df based on filtered data
-    filtered_bins = counties_df[["NAME", "GEOID"]].merge(
-        filtered_grouped, left_on='GEOID', right_on='geoid', how='left')
-    filtered_bins['n_accidents'] = filtered_bins['n_accidents'].fillna(0)
-    return filtered_bins
-
-
-def bin_data_by_state(df):
-    logger.info("Aggregating based on states...")
-    # Aggregate data based on states
-    filtered_grouped = df.groupby('State', observed=False).size().reset_index(name='n_accidents')
-    # set n_accidents in states_df based on filtered data
-    filtered_bins = states_df[["name", "id"]].merge(
-        filtered_grouped, left_on='id', right_on='State', how='left')
-    filtered_bins['n_accidents'] = filtered_bins['n_accidents'].fillna(0)
-    return filtered_bins
-
-
-def filter_data(filter_dict):
-    if len(filter_dict) == 0:
-        logger.info("No filters applied, returning original data")
-        return traffic
-    
-    # Construct the filter string by joining the items
-    filter_string = " & ".join(f"({value})" for _, value in filter_dict.items())
-
-    logger.info("Filtering data with condition: %s", filter_string)
-    filtered_traffic = traffic.query(filter_string)
-    return filtered_traffic
-
-filtered = filter_data(filter_dict) # a global variable to hold filtered data
-
-# TODO this needs to match the intitial plot type
-filtered_bins = bin_data_by_state(filtered) # a global variable to hold the current
-logger.debug("Initial binned data size: %d", filtered_bins.shape[0])
-# binned data
+min_date = gs.get_data()['Start_Time'].min().date()
+max_date = gs.get_data()['Start_Time'].max().date()
 
 # Get unique weather conditions for dropdown
-weather_options = [{'label': w, 'value': w} for w in sorted(traffic['Weather_Condition'].dropna().unique())]
-
+weather_options = [{'label': w, 'value': w} for w in sorted(gs.get_data()['Weather_Condition'].dropna().unique())]
 
 
 def filter_geographic_bounds(df, lat=None, lng=None, width=6, height=4.0):
@@ -145,7 +60,7 @@ def filter_geographic_bounds(df, lat=None, lng=None, width=6, height=4.0):
     lng_max = lng + width / 2
     start_time = time()
     bbox = box(lng_min, lat_min, lng_max, lat_max)
-    global sindex
+    sindex = gs.get_spatial_index()
     matches = sindex.query(bbox)
     filtered_df = df.iloc[matches]
     logger.info("Geographic filtering took: %s seconds", time() - start_time)
@@ -221,23 +136,21 @@ def time_range_updated(selected_range):
               prevent_initial_call=True)
 def refilter_data(filter_ui_trigger):
     # filter_ui_trigger is a dummy variable to trigger updates whenever we change the filter UI
-    global filtered
     global filter_dict
 
-    filtered = filter_data(filter_dict)
+    # filter the data
+    gs.filter_data(filter_dict, logger=logger)
     # If hexbin, update the binned data
     # If scatterplot, rebuild the spatial index
     global current_plot_type
-    global filtered_bins
     if current_plot_type == 'hexbin':
-        filtered_bins = bin_data_by_h3(filtered)
+        gs.bin_data_by_h3()
     elif current_plot_type == 'county':
-        filtered_bins = bin_data_by_county(filtered)
+        gs.bin_data_by_county()
     elif current_plot_type == 'state':
-        filtered_bins = bin_data_by_state(filtered)
+        gs.bin_data_by_state()
     elif current_plot_type == 'scatter':
-        global sindex
-        sindex = filtered.sindex  # rebuild spatial index for filtered data
+        gs.update_spatial_index()
 
     return time()
 
@@ -247,11 +160,10 @@ def update_scattermap_figure(filtering_state, map_layout):
 
     # filtering_state is a dummy variable to trigger updates whenever we filter
     # so we don't need to pass around the whole dataframe in a dcc.Store
-    global filtered
     lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
 
     # only show points within the current map bounds
-    within_bounds = filter_geographic_bounds(filtered, lat=lat, lng=lng)
+    within_bounds = filter_geographic_bounds(gs.get_data(), lat=lat, lng=lng)
 
     fig = create_scattermap_figure(within_bounds, zoom=zoom, center={
         "lat": lat,
@@ -291,8 +203,7 @@ def update_map_on_relayout(relayout_data, selected_plot_type):
         if current_plot_type != 'scatter':
             logger.info("Switching to scatter plot")
             # Need to rebuild spatial index for filtered data
-            global sindex
-            sindex = filtered.sindex
+            gs.update_spatial_index()
             should_update_map = True
             current_plot_type = 'scatter'
 
@@ -326,7 +237,7 @@ def extract_lat_lng_zoom_from_layout(layout):
 def create_hexbin_figure(df, zoom=3, center=None):
     fig = px.choropleth_map(
         df,
-        geojson=h3_cells_geojson,
+        geojson=gs.get_h3_geojson(),
         locations='h3cell',
         featureidkey='properties.h3cell',
         color='n_accidents',
@@ -336,55 +247,51 @@ def create_hexbin_figure(df, zoom=3, center=None):
         range_color=[0, df['n_accidents'].quantile(0.9)],
         center=center,
         hover_data={'h3cell': True, 'n_accidents': True},
-        opacity=0.3,
         width=1000,
         height=700
     )
-    fig.update_traces(marker_line_width=0)
+    fig.update_traces(marker_line_width=0,)
     return fig
 
 
 # called by the more general update_figure function below
 def update_hexbin_figure(filtering_state, map_layout):
     # filtering_state is a dummy variable to trigger updates whenever we filter
-    global filtered_bins
     lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
-    fig = create_hexbin_figure(filtered_bins, zoom=zoom, center={"lat": lat, "lon": lng})
+    fig = create_hexbin_figure(gs.get_binned_data(), zoom=zoom, center={"lat": lat, "lon": lng})
     return fig
 
 
 def create_county_figure(df, zoom=3, center=None):
     fig = px.choropleth_map(
         df,
-        geojson=counties_geojson,
+        geojson=gs.get_counties_geojson(),
         locations='GEOID',
         featureidkey='properties.GEOID',
         color='n_accidents',
-        color_continuous_scale="Viridis",
+        color_continuous_scale="viridis",
         map_style="light",
         zoom=zoom,
         range_color=[0, df['n_accidents'].quantile(0.9)],
         center=center,
         hover_data={'NAME': True, 'n_accidents': True},
-        opacity=0.3,
         width=1000,
         height=700
-    )
+    )   
     return fig
 
 
 def update_county_figure(filtering_state, map_layout):
     # filtering_state is a dummy variable to trigger updates whenever we filter
-    global filtered_bins
     lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
-    fig = create_county_figure(filtered_bins, zoom=zoom, center={"lat": lat, "lon": lng})
+    fig = create_county_figure(gs.get_binned_data(), zoom=zoom, center={"lat": lat, "lon": lng})
     return fig
 
 
 def create_state_figure(df, zoom=3, center=None):
     fig = px.choropleth_map(
         df,
-        geojson=states_geojson,
+        geojson=gs.get_states_geojson(),
         locations='name',
         featureidkey='properties.name',
         color='n_accidents',
@@ -394,7 +301,6 @@ def create_state_figure(df, zoom=3, center=None):
         range_color=[0, df['n_accidents'].quantile(0.9)],
         center=center,
         hover_data={'name': True, 'n_accidents': True},
-        opacity=0.3,
         width=1000,
         height=700
     )
@@ -403,9 +309,8 @@ def create_state_figure(df, zoom=3, center=None):
 
 def update_state_figure(filtering_state, map_layout):
     # filtering_state is a dummy variable to trigger updates whenever we filter
-    global filtered_bins
     lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
-    fig = create_state_figure(filtered_bins, zoom=zoom, center={"lat": lat, "lon": lng})
+    fig = create_state_figure(gs.get_binned_data(), zoom=zoom, center={"lat": lat, "lon": lng})
     return fig
 
 
@@ -495,7 +400,7 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
             ),
             dcc.Graph(
                 id="map_figure",
-                figure=create_state_figure(filtered_bins, zoom=START_ZOOM, center=START_COORDINATES),
+                figure=create_state_figure(gs.get_binned_data(), zoom=START_ZOOM, center=START_COORDINATES),
                 style={'flex': '1', 'minHeight': '0'}  # allow the graph to fill vertical space
             )
         ]),
