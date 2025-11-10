@@ -328,12 +328,22 @@ wheels = [
 ]
 
 [[package]]
+name = "dash-resizable-panels"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/ca/028f85bcb268db70828c9fb2752759af88a724ea856e02b4dbef639b6bce/dash_resizable_panels-0.1.0.tar.gz", hash = "sha256:e93243052168e8ba21fe09e5ffd7a0366de21aeab694122e2365ef156e2f8a57", size = 46700, upload-time = "2023-12-01T00:29:57.073Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/73/dc150294a694b947ed93918d3c8b5101ba945617bc4a2a4ef465a25bf20d/dash_resizable_panels-0.1.0-py3-none-any.whl", hash = "sha256:d13a2ab809415c132266698bc4f0f22221f2202fa2c37bd1b6fce7158f334636", size = 48588, upload-time = "2023-12-01T00:29:50.315Z" },
+]
+
+[[package]]
 name = "davi-traff-weath"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "dash" },
     { name = "dash-bootstrap-components" },
+    { name = "dash-resizable-panels" },
     { name = "fastparquet" },
     { name = "geopandas" },
     { name = "geopy" },
@@ -341,7 +351,6 @@ dependencies = [
     { name = "ipykernel" },
     { name = "matplotlib" },
     { name = "nbformat" },
-    { name = "panda" },
     { name = "pandas" },
     { name = "plotly" },
     { name = "plotly-geo" },
@@ -356,6 +365,7 @@ dependencies = [
 requires-dist = [
     { name = "dash", specifier = ">=3.2.0" },
     { name = "dash-bootstrap-components", specifier = ">=2.0.4" },
+    { name = "dash-resizable-panels", specifier = ">=0.1.0" },
     { name = "fastparquet", specifier = ">=2024.11.0" },
     { name = "geopandas", specifier = ">=1.0.1" },
     { name = "geopy", specifier = ">=2.4.1" },
@@ -363,7 +373,6 @@ requires-dist = [
     { name = "ipykernel", specifier = ">=6.30.1" },
     { name = "matplotlib", specifier = ">=3.9.4" },
     { name = "nbformat", specifier = ">=5.10.4" },
-    { name = "panda", specifier = ">=0.3.1" },
     { name = "pandas", specifier = ">=2.3.2" },
     { name = "plotly", specifier = ">=6.3.0" },
     { name = "plotly-geo", specifier = ">=1.0.0" },
@@ -1041,16 +1050,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/a1/d4/1fc4078c65507b51b
 wheels = [
     { url = "https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl", hash = "sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484", size = 66469, upload-time = "2025-04-19T11:48:57.875Z" },
 ]
-
-[[package]]
-name = "panda"
-version = "0.3.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-    { name = "setuptools" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/79/03/74996420528fe488ce17c42b6400531c8067d7eb661c304fa3aa8fdad17c/panda-0.3.1.tar.gz", hash = "sha256:f213b848f09268b3e9fce0e103155ab003217c0e27f6048b6194e7f90bb2b716", size = 5833, upload-time = "2015-08-03T13:33:16.589Z" }
 
 [[package]]
 name = "pandas"
