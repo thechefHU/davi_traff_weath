@@ -8,9 +8,12 @@ from dash import dcc, html, Input, Output, State
 import plotly.express as px
 import pandas as pd
 import global_state as gs
+import dash_daq as daq
 
 # Register callbacks in a function
 def register_callbacks(app):
+    
+    # CALLBACK 1: updates graph when filters change
     @app.callback(
         Output("weather-chart", "figure"),
          Input("filtered-state", "value")
@@ -20,6 +23,19 @@ def register_callbacks(app):
         # (this only happens in the main app)
         fig = update_chart()
         return fig
+
+    # CALLBACK 2: updates graph visibility when the switch is toggled
+    @app.callback(
+        Output('weather-chart', 'style'),
+        Input('hide_weather', 'value')
+    )
+    def toggle_weather_chart_visibility(switch_value):
+        if switch_value == True:
+            # If switch is ON, set display to 'block' (visible)
+            return {'display': 'block'}
+        else:
+            # If switch is OFF, set display to 'none' (hidden)
+            return {'display': 'none'}
 
 
 def update_chart():
@@ -41,12 +57,19 @@ def update_chart():
 layout = html.Div([
         html.H4("Accidents by Weather", className="text-center"),
         
+        daq.ToggleSwitch(
+            id="hide_weather",
+            label="Hide Chart",
+            value=True # Starts visible
+        ),
+
         # Initialize with an empty figure to prevent cut-off on first load.
         dcc.Graph(
             id="weather-chart",
             figure={}, # Fix for initial load cut-off
             config={'responsive': True},
-            className="flex-grow-1" # Bootstrap class for flex-grow: 1
+            className="flex-grow-1", # Bootstrap class for flex-grow: 1
+            style={'display': 'block'} 
         )
     ]
 )
@@ -64,4 +87,4 @@ if __name__ == "__main__":
         dcc.Input(id="filtered-state", type="hidden", value="init")
     ])
     register_callbacks(app)
-    app.run(debug=True) 
+    app.run(debug=True)

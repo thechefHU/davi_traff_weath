@@ -8,9 +8,12 @@ from dash import dcc, html, Input, Output, State
 import plotly.express as px
 import pandas as pd
 import global_state as gs
+import dash_daq as daq
 
 # Register callbacks in a function
 def register_callbacks(app):
+
+    # CALLBACK 1: updates graph when filters or radio buttons change
     @app.callback(
         Output("time-chart", "figure"),
         [Input("time-granularity", "value"),
@@ -21,6 +24,19 @@ def register_callbacks(app):
         # (this only happens in the main app)
         fig = update_chart(granularity)
         return fig
+
+    # CALLBACK 2: updates chart visibility when switch is toggled
+    @app.callback(
+        Output('time-chart-content', 'style'),
+        Input('hide_time', 'value')
+    )
+    def toggle_time_chart_visibility(switch_value):
+        if switch_value == True:
+            # If switch is ON, set display to 'block' (visible)
+            return {'display': 'block'}
+        else:
+            # If switch is OFF, set display to 'none' (hidden)
+            return {'display': 'none'}
 
 
 def update_chart(granularity):
@@ -51,27 +67,37 @@ def update_chart(granularity):
 
 layout = html.Div([
         html.H4("Accidents Over Time", className="text-center"),
-        dcc.RadioItems(
-            id="time-granularity",
-            options=[
-                {"label": "Hourly", "value": "hour"},
-                {"label": "Weekly", "value": "weekday"},
-                {"label": "Monthly", "value": "month"},
-                {"label": "Seasonal", "value": "season"},
-            ],
-            value="hour",
-            inline=True,
-            # Add gap-4 for spacing between radio buttons
-            className="d-flex justify-content-center mb-3 gap-4"
+        
+
+        daq.ToggleSwitch(
+            id="hide_time",
+            label="Hide Chart",
+            value=True  # Starts visible
         ),
-        # This Graph will grow to fill the remaining space.
-        # Initialize with an empty figure to prevent cut-off on first load.
-        dcc.Graph(
-            id="time-chart",
-            figure={}, # Fix for initial load cut-off
-            config={'responsive': True},
-            className="flex-grow-1" # Bootstrap class for flex-grow: 1
-        ),
+        
+        html.Div(id="time-chart-content", style={'display': 'block'}, children=[
+            dcc.RadioItems(
+                id="time-granularity",
+                options=[
+                    {"label": "Hourly", "value": "hour"},
+                    {"label": "Weekly", "value": "weekday"},
+                    {"label": "Monthly", "value": "month"},
+                    {"label": "Seasonal", "value": "season"},
+                ],
+                value="hour",
+                inline=True,
+                # Add gap-4 for spacing between radio buttons
+                className="d-flex justify-content-center mb-3 gap-4"
+            ),
+            # This Graph will grow to fill the remaining space.
+            # Initialize with an empty figure to prevent cut-off on first load.
+            dcc.Graph(
+                id="time-chart",
+                figure={}, # Fix for initial load cut-off
+                config={'responsive': True},
+                className="flex-grow-1" # Bootstrap class for flex-grow: 1
+            ),
+        ])
     ])
 
 
@@ -89,4 +115,4 @@ if __name__ == "__main__":
         dcc.Input(id="filtered-state", type="hidden", value="init")
     ])
     register_callbacks(app)
-    app.run(debug=True) 
+    app.run(debug=True)
