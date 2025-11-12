@@ -43,7 +43,7 @@ logger.info("Loading data...")
 
 filter_dict = {}  # global variable to hold current filter conditions
 
-gs.load_data(data_folder="data/", subset_accidents=100000)  # load a subset for faster testing
+gs.load_data(data_folder="data/")  # load a subset for faster testing
 
 min_date = gs.get_data()['Start_Time'].min().date()
 max_date = gs.get_data()['Start_Time'].max().date()
@@ -482,8 +482,14 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
         children=[
             html.H2("Plots"),
             html.P("Add plot components here."),
-            chart_time.layout,
-            chart_weather.layout
+            html.Details([
+                html.Summary("Accidents Over Time"),
+                chart_time.layout
+            ]),
+            html.Details([
+                html.Summary("Accidents by Weather"),
+                chart_weather.layout
+            ])
         ]),
     ]),
 

@@ -31,6 +31,9 @@ traffic = pd.read_csv(data_folder / "US_Accidents_March23.csv", engine="c")
 geodata = geopandas.read_file(data_folder /"counties.geojson")
 population = pd.read_csv("data/co-est2021-alldata.csv",encoding="latin1")
 
+# ONLY TAKE CALIFORNIA
+traffic = traffic[traffic["State"]=="CA"].reset_index(drop=True)
+
 print("Starting type conversion")
 traffic["ID"] = traffic["ID"].astype("string")
 print("ID done")
