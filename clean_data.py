@@ -22,6 +22,7 @@ import h3
 
 
 H3_RESOLUTION = 4 # granularity of hexagons
+H3_FINE_RESOLUTION = 6 # finer granularity for some plots
 
 data_folder = Path("data")
 os.makedirs(data_folder, exist_ok=True)
@@ -107,53 +108,60 @@ print(traffic.dtypes)
 
 print("Putting points into H3 cells...")
 traffic["h3cell"] = traffic.apply(lambda row: h3.latlng_to_cell(row["Start_Lat"], row["Start_Lng"], H3_RESOLUTION), axis=1)
-
+traffic["h3cell_fine"] = traffic.apply(lambda row: h3.latlng_to_cell(row["Start_Lat"], row["Start_Lng"], H3_FINE_RESOLUTION), axis=1)
 print("Creating H3 DataFrame")
-# find coordinates of h3 cells
-h3_lats = []
-h3_lngs = []
-h3_cells = traffic["h3cell"].unique()
-for cell in h3_cells:
-    lat, lng = h3.cell_to_latlng(cell)
-    h3_lats.append(lat)
-    h3_lngs.append(lng)
 
-h3_df = pd.DataFrame({
-    "h3cell": h3_cells,
-    "h3_lat": h3_lats,
-    "h3_lng": h3_lngs
-})
 
-print("Saving h3 dataframe to parquet")
-h3_df.to_parquet(data_folder / "h3_cells.parquet", engine="fastparquet")
+def save_h3_geometry_from_points(traffic, column_name, output_parquet, output_geojson):
 
-print("Creating GeoJSON of H3 cells")
-geojson_obj = {
-    "type": "FeatureCollection",
-    "features": []
-}
+    # find coordinates of h3 cells
+    h3_lats = []
+    h3_lngs = []
+    h3_cells = traffic[column_name].unique()
+    for cell in h3_cells:
+        lat, lng = h3.cell_to_latlng(cell)
+        h3_lats.append(lat)
+        h3_lngs.append(lng)
 
-for _, row in h3_df.iterrows():
-    # The lat-lng pairs need to be in (lng, lat) order for GeoJSON
-    geom = {
-        "type": "Polygon",
-        "coordinates": [[
-            (lng, lat) for lat, lng in h3.cell_to_boundary(row["h3cell"])
-        ]]
+    h3_df = pd.DataFrame({
+        "h3cell": h3_cells,
+        "h3_lat": h3_lats,
+        "h3_lng": h3_lngs
+    })
+
+    print("Saving h3 dataframe to parquet")
+    h3_df.to_parquet(output_parquet, engine="fastparquet")
+
+    print("Creating GeoJSON of H3 cells")
+    geojson_obj = {
+        "type": "FeatureCollection",
+        "features": []
     }
 
-    feature = {
-        "type": "Feature",
-        "geometry": geom,
-        "properties": {
-            "h3cell": row["h3cell"]
+    for _, row in h3_df.iterrows():
+        # The lat-lng pairs need to be in (lng, lat) order for GeoJSON
+        geom = {
+            "type": "Polygon",
+            "coordinates": [[
+                (lng, lat) for lat, lng in h3.cell_to_boundary(row["h3cell"])
+            ]]
         }
-    }
-    geojson_obj["features"].append(feature)
 
-print("Saving H3 GeoJSON to file")
-with open(data_folder / "h3_cells.geojson", "w") as f:
-    json.dump(geojson_obj, f)
+        feature = {
+            "type": "Feature",
+            "geometry": geom,
+            "properties": {
+                "h3cell": row["h3cell"]
+            }
+        }
+        geojson_obj["features"].append(feature)
+
+    print("Saving H3 GeoJSON to file")
+    with open(output_geojson, "w") as f:
+        json.dump(geojson_obj, f)
+
+save_h3_geometry_from_points(traffic, "h3cell", data_folder / "h3_cells.parquet", data_folder / "h3_cells.geojson")
+save_h3_geometry_from_points(traffic, "h3cell_fine", data_folder / "h3_cells_fine.parquet", data_folder / "h3_cells_fine.geojson")
 
 print("H3 cells done.")
 

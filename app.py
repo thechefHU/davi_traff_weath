@@ -99,16 +99,36 @@ def create_scattermap_figure(df, zoom=3, center=None):
         lon="Start_Lng",
         #hover_name="Description",
         hover_data={"Start_Lat": False, "Start_Lng": False, "Severity": True, "Start_Time": True},
+        custom_data=["ID"],  # to get point indices for brushing
         zoom=zoom,
         center=center,
         map_style="light",
         width=1000, 
         height=700
     )
+    
     fig.update_traces(marker=dict(size=get_point_size(zoom)),
                        opacity=get_opacity(zoom),
                        marker_color='black')
     return fig
+
+
+def create_heatmap_figure(df, zoom=3, center=None):
+
+    fig = px.density_map(
+        df,
+        lat="Start_Lat",
+        lon="Start_Lng",
+        z="density_z",
+        zoom=zoom,
+        center=center,
+        map_style="light",
+        radius= 10,#max(1, zoom / 2),  # radius increases with zoom
+        width=1000, 
+        height=700
+    )
+    return fig
+
 
 
 @app.callback(Output('filter-ui-trigger', 'value', allow_duplicate=True),
@@ -173,6 +193,55 @@ def update_scattermap_figure(filtering_state, map_layout):
     })
 
     return fig
+
+
+@app.callback(Input('map_figure', 'selectedData'))
+def brushed_data(selected_data):
+    if selected_data is None:
+        return
+
+    logger.info("Brushed data points: %s", selected_data)
+
+    # Extract point indices from selected data
+
+    if current_plot_type == 'scatter':
+        point_indices = [point['customdata'][0] for point in selected_data['points']]
+        print(point_indices)
+        #logger.info("Brushed data point indices: %s", point_indices)
+        filter_str = f"ID in {point_indices}"
+        filter_dict["brushed"] = filter_str
+    elif current_plot_type in 'state':
+        states = [point['location'] for point in selected_data['points']]
+        filter_str = f"State in {states}"
+        filter_dict["brushed"] = filter_str
+    elif current_plot_type in 'county':
+        counties = [point['location'] for point in selected_data['points']]
+        filter_str = f"geoid in {counties}"
+        filter_dict["brushed"] = filter_str
+    elif current_plot_type in 'hexbin':
+        pass  # hexbin brushing not implemented yet
+
+    
+    refilter_data(filter_ui_trigger=time())
+
+
+
+def update_heatmap_figure(filtering_state, map_layout):
+
+    # filtering_state is a dummy variable to trigger updates whenever we filter
+    # so we don't need to pass around the whole dataframe in a dcc.Store
+    lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
+
+    # only show points within the current map bounds
+    within_bounds = filter_geographic_bounds(gs.get_data(), lat=lat, lng=lng)
+
+    fig = create_heatmap_figure(within_bounds, zoom=zoom, center={
+        "lat": lat,
+        "lon": lng
+    })
+
+    return fig
+
 
 # Updating of the map based on zoom level and panning
 @app.callback(
@@ -246,7 +315,7 @@ def create_hexbin_figure(df, zoom=3, center=None):
         color_continuous_scale="Viridis",
         map_style="light",
         zoom=zoom,
-        range_color=[0, df['n_accidents'].quantile(0.9)],
+        #range_color=[0, df['n_accidents'].quantile(0.9)],
         center=center,
         hover_data={'h3cell': True, 'n_accidents': True},
         width=1000,
@@ -274,7 +343,7 @@ def create_county_figure(df, zoom=3, center=None):
         color_continuous_scale="viridis",
         map_style="light",
         zoom=zoom,
-        range_color=[0, df['n_accidents'].quantile(0.9)],
+        #range_color=[0, df['n_accidents'].quantile(0.9)],
         center=center,
         hover_data={'NAME': True, 'n_accidents': True},
         width=1000,
@@ -300,7 +369,7 @@ def create_state_figure(df, zoom=3, center=None):
         color_continuous_scale="Viridis",
         map_style="light",
         zoom=zoom,
-        range_color=[0, df['n_accidents'].quantile(0.9)],
+        #range_color=[0, df['n_accidents'].quantile(0.9)],
         center=center,
         hover_data={'name': True, 'n_accidents': True},
         width=1000,
