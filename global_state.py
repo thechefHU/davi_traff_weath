@@ -17,11 +17,9 @@ _sindex = None # Spatial index for the current data
 
 _h3_geojson = None
 _counties_geojson = None
-_states_geojson = None
 
 _h3_df = None
 _counties_df = None
-_states_df = None
 
 def load_data(data_folder="/data/", subset_accidents = None, logger=None):
     """
@@ -57,24 +55,20 @@ def load_data(data_folder="/data/", subset_accidents = None, logger=None):
     update_spatial_index()
     global _unfiltered_data
     _unfiltered_data = _current_data.copy() # for later use
-    global _h3_df, _counties_df, _states_df
-    global _h3_geojson, _counties_geojson, _states_geojson
+    global _h3_df, _counties_df
+    global _h3_geojson, _counties_geojson
 
     # Load information about the H3 cells
     _h3_df = pd.read_parquet(data_folder / "h3_cells_fine.parquet", engine="fastparquet")
     with open(data_folder / "h3_cells_fine.geojson", "r") as f:
         _h3_geojson = json.load(f)
     # Load information about the counties
-    _counties_df = gpd.read_file(data_folder / "counties.geojson")
+    _counties_df = gpd.read_file(data_folder / "counties_processed.geojson")
     with open(data_folder / "counties.geojson", "r") as f:
         _counties_geojson = json.load(f)
-    # Load information about the states
-    _states_df = gpd.read_file(data_folder / "us-states.json")
-    with open(data_folder / "us-states.json", "r") as f:
-        _states_geojson = json.load(f)
 
     # TODO this needs to match the intitial plot type
-    _current_binned_data = bin_data_by_state()
+    _current_binned_data = bin_data_by_county()
 
     if logger is not None:
         logger.info("Data loaded successfully.")
@@ -167,14 +161,6 @@ def bin_data_by_county():
     set_binned_data(filtered_bins)
 
 
-def bin_data_by_state():
-    # Aggregate data based on states
-    filtered_grouped = get_data().groupby('State', observed=False).size().reset_index(name='n_accidents')
-    # set n_accidents in states_df based on filtered data
-    filtered_bins = _states_df[["name", "id"]].merge(
-        filtered_grouped, left_on='id', right_on='State', how='left')
-    filtered_bins['n_accidents'] = filtered_bins['n_accidents'].fillna(0)
-    set_binned_data(filtered_bins)
 
 def get_h3_geojson():
     return _h3_geojson
@@ -182,6 +168,4 @@ def get_h3_geojson():
 def get_counties_geojson():
     return _counties_geojson
 
-def get_states_geojson():
-    return _states_geojson
 

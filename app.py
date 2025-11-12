@@ -16,9 +16,9 @@ import chart_accidents_over_time as chart_time
 import chart_accidents_by_weather as chart_weather
 
 # Setup variables
-current_plot_type = 'county'  # or 'scatter' or 'county' or 'state'
-START_COORDINATES = {"lat": 37.0902, "lon": -95.7129}
-START_ZOOM = 3
+current_plot_type = 'county'  # or 'scatter' or 'county' 
+START_COORDINATES = {"lat": 36.4, "lon": -118.39} # Center on California
+START_ZOOM = 4.5
 SCATTER_PLOT_ZOOM_THRESHOLD = 7  # zoom level above which we switch to scatter plot
 
 # global variable to hold the last map layout used for geographic filtering
@@ -169,8 +169,6 @@ def refilter_data(filter_ui_trigger):
         gs.bin_data_by_h3()
     elif current_plot_type == 'county':
         gs.bin_data_by_county()
-    elif current_plot_type == 'state':
-        gs.bin_data_by_state()
     elif current_plot_type == 'scatter':
         gs.update_spatial_index()
 
@@ -209,10 +207,6 @@ def brushed_data(selected_data):
         print(point_indices)
         #logger.info("Brushed data point indices: %s", point_indices)
         filter_str = f"ID in {point_indices}"
-        filter_dict["brushed"] = filter_str
-    elif current_plot_type in 'state':
-        states = [point['location'] for point in selected_data['points']]
-        filter_str = f"State in {states}"
         filter_dict["brushed"] = filter_str
     elif current_plot_type in 'county':
         counties = [point['location'] for point in selected_data['points']]
@@ -359,30 +353,6 @@ def update_county_figure(filtering_state, map_layout):
     return fig
 
 
-def create_state_figure(df, zoom=3, center=None):
-    fig = px.choropleth_map(
-        df,
-        geojson=gs.get_states_geojson(),
-        locations='name',
-        featureidkey='properties.name',
-        color='n_accidents',
-        color_continuous_scale="Viridis",
-        map_style="light",
-        zoom=zoom,
-        #range_color=[0, df['n_accidents'].quantile(0.9)],
-        center=center,
-        hover_data={'name': True, 'n_accidents': True},
-        width=1000,
-        height=700
-    )
-    return fig
-
-
-def update_state_figure(filtering_state, map_layout):
-    # filtering_state is a dummy variable to trigger updates whenever we filter
-    lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
-    fig = create_state_figure(gs.get_binned_data(), zoom=zoom, center={"lat": lat, "lon": lng})
-    return fig
 
 
 
@@ -409,8 +379,6 @@ def update_figure(filtering_state, layout, selected_plot_type):
         return update_county_figure(filtering_state, layout)
     elif current_plot_type == 'hexbin':
         return update_hexbin_figure(filtering_state, layout)
-    elif current_plot_type == 'state':
-        return update_state_figure(filtering_state, layout)
 
 
 
@@ -461,16 +429,15 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
             dcc.RadioItems(
                 id='plot-type-radio',
                 options=[
-                    {'label': 'State', 'value': 'state'},
                     {'label': 'County', 'value': 'county'},
                     {'label': 'Hexagon', 'value': 'hexbin'},
                 ],
-                value='state',
+                value='county',
                 labelStyle={'display': 'inline-block', 'marginBottom': '6px'}
             ),
             dcc.Graph(
                 id="map_figure",
-                figure=create_state_figure(gs.get_binned_data(), zoom=START_ZOOM, center=START_COORDINATES),
+                figure=create_county_figure(gs.get_binned_data(), zoom=START_ZOOM, center=START_COORDINATES),
                 style={'flex': '1', 'minHeight': '0'}  # allow the graph to fill vertical space
             )
         ]),

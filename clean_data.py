@@ -171,7 +171,6 @@ print("H3 cells done.")
 print("\n WE ARE NOT ALL DONE, fix geoID, population and density takes around 5 minutes")
 #Adding a FIPS code to all traffic accidents, named geoid in the code
 polygons = geodata["geometry"]
-
 geoid = geodata["GEOID"]
 
 smallTraffic = traffic[["State","County","Start_Lng","Start_Lat"]] #Chop away most things from the traffic dataset
@@ -233,34 +232,20 @@ for geoid in uniqueCounties:
     geodataDataExist[index] = True
 
 #Merge new columns into geodata
+
+geodata = geodata[geodata["STATEFP"]=="06"].reset_index(drop=True) # Only keep california
 geodata = pd.concat([geodata,geodataPopulation,geodataDensity,geodataDataExist],axis=1)
 
 geodata = geodata.rename(columns={0:"Population",1:"Density",2:"DataExist"})
 
+
+
 geodata.to_file("data/counties_processed.geojson", driver='GeoJSON')
 
 
-##################################################### Added statesArea.csv to main pull it into data !!!!!!!!!!!!!!!!!!!!!!!!
-import pandas as pd
-area = pd.Series([1]*50,dtype=int)
-area = pd.read_csv("data/statesArea.csv", sep=",",header=None)
-area = area.rename(columns={0:"name",1:"area"})
-states = pd.read_json("data/us-states.json")
-features = states["features"]
 
 
-for idx, row in features.items():
-    properties = row["properties"]
-    name = properties["name"]
-    stateArea = float(area.loc[area["name"]==name,"area"].iloc[0])
-    pop = float(population.loc[(population["STNAME"]==name) & (population["COUNTY"]==0),"ESTIMATESBASE2020"].iloc[0]) #population
-    density = pop/stateArea
-    properties.update({"Area":stateArea,"Population":pop,"Density":density})
 
-states.to_json("data/us-states_processed.json")
-
-
-print("Saving as data/traffic.parquet")
 ##################################################### Added weather groups as a new column
 conditions = [
     traffic['Weather_Condition'].str.contains('T-Storm|Thunder|Storm', case=False, na=False),
@@ -289,5 +274,6 @@ choices = [
 
 
 traffic['Weather_Group'] = np.select(conditions, choices, default='Other')
-traffic.to_parquet(data_folder / "traffic.parquet", engine="fastparquet")
 print("Done!")
+print("Saving as data/traffic.parquet")
+traffic.to_parquet(data_folder / "traffic.parquet", engine="fastparquet")
