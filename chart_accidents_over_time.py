@@ -25,18 +25,7 @@ def register_callbacks(app):
         fig = update_chart(granularity)
         return fig
 
-    # CALLBACK 2: updates chart visibility when switch is toggled
-    @app.callback(
-        Output('time-chart-content', 'style'),
-        Input('hide_time', 'value')
-    )
-    def toggle_time_chart_visibility(switch_value):
-        if switch_value == True:
-            # If switch is ON, set display to 'block' (visible)
-            return {'display': 'block'}
-        else:
-            # If switch is OFF, set display to 'none' (hidden)
-            return {'display': 'none'}
+
 
 
 def update_chart(granularity):
@@ -66,14 +55,6 @@ def update_chart(granularity):
 
 
 layout = html.Div([
-        html.H4("Accidents Over Time", className="text-center"),
-        
-
-        daq.ToggleSwitch(
-            id="hide_time",
-            label="Hide Chart",
-            value=True  # Starts visible
-        ),
         
         html.Div(id="time-chart-content", style={'display': 'block'}, children=[
             dcc.RadioItems(
@@ -93,9 +74,6 @@ layout = html.Div([
             # Initialize with an empty figure to prevent cut-off on first load.
             dcc.Graph(
                 id="time-chart",
-                figure={}, # Fix for initial load cut-off
-                config={'responsive': True},
-                className="flex-grow-1" # Bootstrap class for flex-grow: 1
             ),
         ])
     ])

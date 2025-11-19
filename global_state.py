@@ -59,8 +59,8 @@ def load_data(data_folder="/data/", subset_accidents = None, logger=None):
     global _h3_geojson, _counties_geojson
 
     # Load information about the H3 cells
-    _h3_df = pd.read_parquet(data_folder / "h3_cells_fine.parquet", engine="fastparquet")
-    with open(data_folder / "h3_cells_fine.geojson", "r") as f:
+    _h3_df = pd.read_parquet(data_folder / "h3_cells.parquet", engine="fastparquet")
+    with open(data_folder / "h3_cells.geojson", "r") as f:
         _h3_geojson = json.load(f)
     # Load information about the counties
     _counties_df = gpd.read_file(data_folder / "counties_processed.geojson")
@@ -140,12 +140,12 @@ def set_binned_data(data):
 # TODO:  hexagons without accidents are thrown arway in clean data script
 def bin_data_by_h3():
     # Aggregate data based on H3 cells
-    filtered_grouped = get_data().groupby('h3cell_fine', observed=False).size().reset_index(name='n_accidents')
+    filtered_grouped = get_data().groupby('h3cell', observed=False).size().reset_index(name='n_accidents')
     # set n_accidents in h3_df based on filtered data
     filtered_cells = _h3_df[["h3cell", "h3_lat", "h3_lng"]].merge(
         filtered_grouped,
         left_on ='h3cell',
-        right_on ='h3cell_fine',
+        right_on ='h3cell',
         how='left')
     filtered_cells['n_accidents'] = filtered_cells['n_accidents'].fillna(0)
     set_binned_data(filtered_cells)

@@ -22,7 +22,7 @@ import h3
 
 
 H3_RESOLUTION = 4 # granularity of hexagons
-H3_FINE_RESOLUTION = 6 # finer granularity for some plots
+H3_FINE_RESOLUTION = 7 # finer granularity for some plots
 
 data_folder = Path("data")
 os.makedirs(data_folder, exist_ok=True)

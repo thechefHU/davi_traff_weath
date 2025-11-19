@@ -1,7 +1,14 @@
 import dash
 from dash import html, Input, Output, State, dcc
 import plotly.express as px
+import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
+import io, base64
+import matplotlib
+matplotlib.use("Agg")  # Must come before pyplot import
+import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
 import geopandas as gp
 from time import time
 import logging
@@ -19,13 +26,13 @@ import chart_accidents_by_weather as chart_weather
 current_plot_type = 'county'  # or 'scatter' or 'county' 
 START_COORDINATES = {"lat": 36.4, "lon": -118.39} # Center on California
 START_ZOOM = 4.5
-SCATTER_PLOT_ZOOM_THRESHOLD = 7  # zoom level above which we switch to scatter plot
+SCATTER_PLOT_ZOOM_THRESHOLD = 10 # zoom level above which we switch to scatter plot
 
 # global variable to hold the last map layout used for geographic filtering
 # We do this to avoid excessive geographic filtering when the user is just panning/zooming a little
 # around the same area
-map_layout_on_last_geofilter = [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM]
-
+map_layout_on_last_geofilter = [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM, [-1, -1, 1, 1]]
+last_plot_type_before_scatter = 'county'  # to remember the last plot type before switching to scatter
 # --- Initialize the Dash App with Bootstrap and FontAwesome for icons ---
 # Dash will automatically serve any CSS file placed in an 'assets' folder.
 
@@ -34,7 +41,7 @@ external_stylesheets = [dbc.icons.FONT_AWESOME]
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 # Setup logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('accidents-dashboard')
 logger.info("\nWelcome to the coolest dashboard ever!")
 # Load data
@@ -52,14 +59,10 @@ max_date = gs.get_data()['Start_Time'].max().date()
 weather_options = [{'label': w, 'value': w} for w in sorted(gs.get_data()['Weather_Group'].dropna().unique())]
 
 
-def filter_geographic_bounds(df, lat=None, lng=None, width=6, height=4.0):
+def filter_geographic_bounds(df, lat_min=None, lat_max=None, lng_min=None, lng_max=None):
     """Only return points visible within a rectangle around the given lat/lng"""
-    if lat is None or lng is None:
+    if lat_min is None or lat_max is None or lng_min is None or lng_max is None:
         return df
-    lat_min = lat - height / 2
-    lat_max = lat + height / 2
-    lng_min = lng - width / 2
-    lng_max = lng + width / 2
     start_time = time()
     bbox = box(lng_min, lat_min, lng_max, lat_max)
     sindex = gs.get_spatial_index()
@@ -113,20 +116,80 @@ def create_scattermap_figure(df, zoom=3, center=None):
     return fig
 
 
-def create_heatmap_figure(df, zoom=3, center=None):
+def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, lng_min=None, lng_max=None):
+    # Create a density heatmap figure
 
-    fig = px.density_map(
-        df,
-        lat="Start_Lat",
-        lon="Start_Lng",
-        z="density_z",
+    np.random.seed(0)
+    logger.info("Creating heatmap figure...")
+    if lat_min is None or lat_min == -1:
+        lng_min = df['Start_Lng'].min()
+        lng_max = df['Start_Lng'].max()
+        lat_min = df['Start_Lat'].min()
+        lat_max = df['Start_Lat'].max()
+    # 2. Compute density (heatmap) on a grid
+    xi = np.linspace(lng_min, lng_max, 40)
+    yi = np.linspace(lat_min, lat_max, 40)
+    X, Y = np.meshgrid(xi, yi)
+    kde_start_time = time()
+
+    if len(df) > 0:
+        kde = gaussian_kde(np.vstack([df['Start_Lng'], df['Start_Lat']]))
+        Z = kde(np.vstack([X.ravel(), Y.ravel()])).reshape(X.shape)
+    else:
+        Z = np.zeros(X.shape)
+    logger.info("KDE computation took: %s seconds", time() - kde_start_time)
+    logger.info("Density computation done.")
+    # 3. Render raster image
+    encode_start_time = time()
+    fig, ax = plt.subplots(figsize=(3, 3), dpi=200)
+    ax.imshow(Z, extent=[lng_min, lng_max, lat_min, lat_max], origin='lower', cmap='hot', alpha=0.7)
+    ax.axis('off')
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0)
+    plt.close(fig)
+    encoded = base64.b64encode(buf.getvalue()).decode()
+    logger.info("Encoding image took: %s seconds", time() - encode_start_time)
+
+
+
+    # 4. Plotly figure with MapLibre base map and overlay
+    fig = px.scatter_map(
         zoom=zoom,
         center=center,
         map_style="light",
-        radius= 10,#max(1, zoom / 2),  # radius increases with zoom
         width=1000, 
         height=700
     )
+
+    fig.update_layout(
+        map_layers=[{
+                "sourcetype": "image",
+                "opacity": 0.6,
+                "below": '',
+                "source": "data:image/png;base64," + encoded,
+                "coordinates": [
+                    [lng_min, lat_max],  # top-left (lon, lat)
+                    [lng_max, lat_max],  # top-right
+                    [lng_max, lat_min],  # bottom-right
+                    [lng_min, lat_min],  # bottom-left
+                ],
+            }],
+        ),
+
+
+    return fig
+
+
+def update_heatmap_figure(filtering_state, map_layout):
+    # filtering_state is a dummy variable to trigger updates whenever we filter
+    center_lat, center_lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
+    lat_min, lat_max, lng_min, lng_max, _ = extract_bounds_zoom_from_layout(map_layout)
+    print("bonds:", lat_min, lat_max, lng_min, lng_max)
+    print("VENNERNE:", lat_min, lat_max, lng_min, lng_max)
+    within_bounds = filter_geographic_bounds(gs.get_data(), lat_min=lat_min, lat_max=lat_max,
+                                            lng_min=lng_min, lng_max=lng_max)
+    fig = create_heatmap_figure(within_bounds, zoom=zoom, center={"lat": center_lat, "lon": center_lng},
+                                lat_min=lat_min, lat_max=lat_max, lng_min=lng_min, lng_max=lng_max)
     return fig
 
 
@@ -181,9 +244,10 @@ def update_scattermap_figure(filtering_state, map_layout):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     # so we don't need to pass around the whole dataframe in a dcc.Store
     lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
-
+    lat_min, lat_max, lng_min, lng_max, _ = extract_bounds_zoom_from_layout(map_layout)
     # only show points within the current map bounds
-    within_bounds = filter_geographic_bounds(gs.get_data(), lat=lat, lng=lng)
+    within_bounds = filter_geographic_bounds(gs.get_data(), lat_min=lat_min, lat_max=lat_max,
+                                            lng_min=lng_min, lng_max=lng_max)
 
     fig = create_scattermap_figure(within_bounds, zoom=zoom, center={
         "lat": lat,
@@ -220,75 +284,78 @@ def brushed_data(selected_data):
 
 
 
-def update_heatmap_figure(filtering_state, map_layout):
 
-    # filtering_state is a dummy variable to trigger updates whenever we filter
-    # so we don't need to pass around the whole dataframe in a dcc.Store
-    lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
-
-    # only show points within the current map bounds
-    within_bounds = filter_geographic_bounds(gs.get_data(), lat=lat, lng=lng)
-
-    fig = create_heatmap_figure(within_bounds, zoom=zoom, center={
-        "lat": lat,
-        "lon": lng
-    })
-
-    return fig
 
 
 # Updating of the map based on zoom level and panning
 @app.callback(
-    Output('map_layout', 'data'),
+    [Output('map_layout', 'data'),
+     Output('plot-type-radio', 'options'),
+     Output('plot-type-radio', 'value')],
+    
     [Input('map_figure', 'relayoutData'),
      State('plot-type-radio', 'value')],
 )
 def update_map_on_relayout(relayout_data, selected_plot_type):
     if relayout_data is None:
-        return dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update
 
     # Check if the center and zoom have moved since last time
-    global map_layout_on_last_geofilter
+    global map_layout_on_last_geofilter     
     global current_plot_type
-    max_dist = 1.5  # degrees
-    max_zoom_change = 1.5  # zoom levels
 
-    # Whether we should update the map layout or not
+    # Map movement thresholds before updating the geographic filter
+    max_dist = 0.01  # degrees
+    max_zoom_change = 0.1  # zoom levels
+
+        # Whether we should update the map layout or not
     # This happens if we switch plot types, or if we are in scatter plot mode
     # and the map is panned/zoomed significantly
     should_update_map = False
 
-    # Check if we need to switch plot types
-    if relayout_data['map.zoom'] < SCATTER_PLOT_ZOOM_THRESHOLD:
-        if current_plot_type == 'scatter': # see if we shoud switch back to selected plot type
-            logger.info("Switching back to selected plot type: %s", selected_plot_type)
-            current_plot_type = selected_plot_type
-            should_update_map = True
-    else:
-        if current_plot_type != 'scatter':
-            logger.info("Switching to scatter plot")
-            # Need to rebuild spatial index for filtered data
-            gs.update_spatial_index()
-            should_update_map = True
-            current_plot_type = 'scatter'
+    scatter_disabled = relayout_data['map.zoom'] < SCATTER_PLOT_ZOOM_THRESHOLD
+    if current_plot_type == 'scatter' and scatter_disabled:
+        logging.info("Zoomed out beyond scatter plot threshold, switching back to last plot type")
+        global last_plot_type_before_scatter
+        current_plot_type = last_plot_type_before_scatter
+        should_update_map = True
+    
+
 
     if 'map.center' in relayout_data and 'map.zoom' in relayout_data:
         if (abs(relayout_data['map.center']['lat'] - map_layout_on_last_geofilter[0][0]) > max_dist or
             abs(relayout_data['map.center']['lon'] - map_layout_on_last_geofilter[0][1]) > max_dist or
             abs(relayout_data['map.zoom'] - map_layout_on_last_geofilter[1]) > max_zoom_change):
-            logging.debug("Map center and zoom change changed significantly, updating")
+            logging.info("Map center and zoom change changed significantly, updating")
             should_update_map = True
 
     if not should_update_map:
-        logging.debug("Map center and zoom change not significant, not updating")
-        return dash.no_update
+        logging.info("Map center and zoom change not significant, not updating")
+        return dash.no_update, dash.no_update, dash.no_update
     else:
-        logging.debug("Updating map with new relayout data: %s", relayout_data)
+        logging.info("Updating map with new relayout data: %s", relayout_data)
+        coordinates = relayout_data['map._derived']['coordinates']
         map_layout = [[
             relayout_data['map.center']['lat'], relayout_data['map.center']['lon']
-        ], relayout_data['map.zoom']]
+        ], relayout_data['map.zoom'], [coordinates[3][1], coordinates[3][0], coordinates[1][1], coordinates[1][0]]]
         map_layout_on_last_geofilter = map_layout
-    return map_layout
+
+    # Update the options for the plot-type-radio element
+    
+    if scatter_disabled:
+        scatter_label = 'Scatter (zoom in to enable)'
+    else:
+        scatter_label = 'Scatter'   
+    
+
+    plot_type_options = [
+        {'label': 'County', 'value': 'county'},
+        {'label': 'Hexagon', 'value': 'hexbin'},
+        {'label': 'Heatmap', 'value': 'heatmap'},
+        {'label': scatter_label, 'value': 'scatter', 'disabled': scatter_disabled}
+    ]
+
+    return map_layout, plot_type_options, current_plot_type
 
 
 def extract_lat_lng_zoom_from_layout(layout):
@@ -297,6 +364,20 @@ def extract_lat_lng_zoom_from_layout(layout):
     lat, lng = layout[0]
     zoom = layout[1]
     return lat, lng, zoom
+
+
+def extract_bounds_zoom_from_layout(layout):
+    # Extract the lat/lng bounds and zoom from the stored layout
+    if layout is None or len(layout) <= 2:
+        logger.warning("WARNING; No map layout data found, using default bounds")
+        logger.warning("Layout data was: %s", layout)
+        return START_COORDINATES['lat']-1, START_COORDINATES['lat']+1, START_COORDINATES['lon']-1, START_COORDINATES['lon']+1, START_ZOOM
+
+    lat_min, lng_min, lat_max, lng_max = layout[2]
+    zoom = layout[1] if len(layout) > 1 else START_ZOOM
+
+    return lat_min, lat_max, lng_min, lng_max, zoom
+
 
 
 def create_hexbin_figure(df, zoom=3, center=None):
@@ -360,25 +441,61 @@ def update_county_figure(filtering_state, map_layout):
               [Input('filtered-state', 'value'),
                Input('map_layout', 'data'),
                Input('plot-type-radio', 'value')],
-              prevent_initial_call=True)
+              prevent_initial_call=True,
+              running=[
+                  (Output('progress-indicator-gif', 'style'),
+            {
+                'top': '10px',
+                'right': '10px',
+                'width': '50px',
+                'height': '50px',
+                'maxWidth': '50px',
+                'opacity': 1,
+                'zIndex': 1000
+            }, 
+            
+             {
+                'top': '10px',
+                'right': '10px',
+                'width': '50px',
+                'height': '50px',
+                'maxWidth': '50px',
+                'opacity': 0,
+                'zIndex': 1000
+            }, 
+            )
+              ])
 def update_figure(filtering_state, layout, selected_plot_type):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     global current_plot_type
 
     # If we are within scatter plot zoom range, always use scatter plot
     # Otherwise, use the selected plot type
-    if current_plot_type == 'scatter':
-        return update_scattermap_figure(filtering_state, layout)
-    else:
-        if selected_plot_type != current_plot_type:
-            logger.info("Switching to selected plot type: %s", selected_plot_type)
+
+    if selected_plot_type != current_plot_type:
+        logger.info("Switching to selected plot type: %s", selected_plot_type)
+        if selected_plot_type == 'scatter':
+            logger.info("Switching to scatter plot")
+            # Need to rebuild spatial index for filtered data
+            gs.update_spatial_index()
+            current_plot_type = 'scatter'
+        else:
             current_plot_type = selected_plot_type
             global filter_dict
             refilter_data(filter_dict)
+
+    if current_plot_type == 'scatter':
+        return update_scattermap_figure(filtering_state, layout)
+    else:
+        global last_plot_type_before_scatter
+        last_plot_type_before_scatter = current_plot_type
+
     if current_plot_type == 'county':
         return update_county_figure(filtering_state, layout)
     elif current_plot_type == 'hexbin':
         return update_hexbin_figure(filtering_state, layout)
+    elif current_plot_type == 'heatmap':
+        return update_heatmap_figure(filtering_state, layout)
 
 
 
@@ -427,18 +544,39 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
         defaultSizePercentage=50,
         children=[
             dcc.RadioItems(
-                id='plot-type-radio',
-                options=[
-                    {'label': 'County', 'value': 'county'},
-                    {'label': 'Hexagon', 'value': 'hexbin'},
-                ],
-                value='county',
-                labelStyle={'display': 'inline-block', 'marginBottom': '6px'}
+            id='plot-type-radio',
+            options=[
+            {'label': 'County', 'value': 'county'},
+            {'label': 'Hexagon', 'value': 'hexbin'},
+            {'label': 'Heatmap', 'value': 'heatmap'},
+            {'label': 'Scatter (zoom in to enable)', 'value': 'scatter', 'disabled': True}
+            ],
+            value='county',
+            labelStyle={'display': 'inline-block', 'marginBottom': '6px'}
+            ),
+            html.Div(
+            id='progress-indicator-container',
+            children=[
+            html.Img(
+            id='progress-indicator-gif',
+            src='assets/progress_indicator.gif',
+            style={
+                'top': '10px',
+                'right': '10px',
+                'width': '50px',
+                'height': '50px',
+                'maxWidth': '50px',
+                'objectFit': 'contain',  # Ensure the image scales correctly
+                'opacity': 0,
+                'zIndex': 1000
+            }
+            ),
+            ]
             ),
             dcc.Graph(
-                id="map_figure",
-                figure=create_county_figure(gs.get_binned_data(), zoom=START_ZOOM, center=START_COORDINATES),
-                style={'flex': '1', 'minHeight': '0'}  # allow the graph to fill vertical space
+            id="map_figure",
+            figure=create_county_figure(gs.get_binned_data(), zoom=START_ZOOM, center=START_COORDINATES),
+            style={'flex': '1', 'minHeight': '0'}  # allow the graph to fill vertical space
             )
         ]),
         PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
@@ -465,8 +603,10 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
     dcc.Input(id='filter-ui-trigger', type='hidden', value='init'),
     # Format is [[lat, lng], zoom]
     dcc.Store(id='map_layout', data=[
-        [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM]
+        # [[mid_lat, mid_lon], zoom, [top_lat, left_lon, bottom_lat, right_lon]]
+        [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM, [-1, -1, 1, 1]]
     ])
+
 ])
 
 # Register callbacks from other modules

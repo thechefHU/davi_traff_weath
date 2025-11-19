@@ -17,6 +17,27 @@ html, body {
     transition: height 0.5s ease;
     overflow: hidden; /* Hide charts when height is 0 */
 }
+
+/* 2) If the label wraps the input:
+   <label><input type="radio" disabled> Option</label>
+   Uses :has() — supported in modern browsers. */
+label:has(input[type="radio"]:disabled) {
+  color: #888888;
+  cursor: not-allowed;
+}
+
+/* 3) Common variable + stronger specificity if needed */
+:root {
+  --radio-label-disabled: #888888;
+}
+
+input[type="radio"]:disabled + label,
+label:has(input[type="radio"]:disabled) {
+  color: var(--radio-label-disabled);
+  opacity: 0.9; /* optional */
+}
+
+
 .toggle-button {
     position: fixed;
     z-index: 1000;

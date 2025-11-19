@@ -24,19 +24,6 @@ def register_callbacks(app):
         fig = update_chart()
         return fig
 
-    # CALLBACK 2: updates graph visibility when the switch is toggled
-    @app.callback(
-        Output('weather-chart', 'style'),
-        Input('hide_weather', 'value')
-    )
-    def toggle_weather_chart_visibility(switch_value):
-        if switch_value == True:
-            # If switch is ON, set display to 'block' (visible)
-            return {'display': 'block'}
-        else:
-            # If switch is OFF, set display to 'none' (hidden)
-            return {'display': 'none'}
-
 
 def update_chart():
     counts = gs.get_data().groupby("Weather_Group",
@@ -55,21 +42,9 @@ def update_chart():
 
 
 layout = html.Div([
-        html.H4("Accidents by Weather", className="text-center"),
-        
-        daq.ToggleSwitch(
-            id="hide_weather",
-            label="Hide Chart",
-            value=True # Starts visible
-        ),
-
         # Initialize with an empty figure to prevent cut-off on first load.
         dcc.Graph(
             id="weather-chart",
-            figure={}, # Fix for initial load cut-off
-            config={'responsive': True},
-            className="flex-grow-1", # Bootstrap class for flex-grow: 1
-            style={'display': 'block'} 
         )
     ]
 )
