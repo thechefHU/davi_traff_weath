@@ -56,7 +56,7 @@ min_date = gs.get_data()['Start_Time'].min().date()
 max_date = gs.get_data()['Start_Time'].max().date()
 
 # Get unique weather conditions for dropdown
-weather_options = [{'label': w, 'value': w} for w in sorted(gs.get_data()['Weather_Group'].dropna().unique())]
+weather_options = sorted(gs.get_data()['Weather_Group'].dropna().unique())
 
 
 def filter_geographic_bounds(df, lat_min=None, lat_max=None, lng_min=None, lng_max=None):
@@ -115,8 +115,17 @@ def create_scattermap_figure(df, zoom=3, center=None):
                        marker_color='black')
     return fig
 
+@app.callback(Output('Severity', 'value', allow_duplicate=True),
+              [Input('SeveritySelectAll','value'),
+               State('Severity','value')],
+              prevent_initial_call=True)
+def SeveritySelectAll(selectAll,Severity):
+    if len(selectAll)==1:
+        return [1,2,3,4]
+    else:
+        return Severity
 
-def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, lng_min=None, lng_max=None):
+def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, lng_min=None, lng_max=None, scale=0, opacity=0.6):
     # Create a density heatmap figure
 
     np.random.seed(0)
@@ -142,7 +151,7 @@ def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, l
     # 3. Render raster image
     encode_start_time = time()
     fig, ax = plt.subplots(figsize=(3, 3), dpi=200)
-    ax.imshow(Z, extent=[lng_min, lng_max, lat_min, lat_max], origin='lower', cmap='hot', alpha=0.7)
+    ax.imshow(Z, extent=[lng_min, lng_max, lat_min, lat_max], origin='lower', cmap='hot')
     ax.axis('off')
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0)
@@ -160,13 +169,13 @@ def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, l
         width=1000, 
         height=700
     )
-
+    print("OPACITY", opacity, type(opacity))
     fig.update_layout(
         map_layers=[{
                 "sourcetype": "image",
-                "opacity": 0.6,
                 "below": '',
                 "source": "data:image/png;base64," + encoded,
+                "opacity": float(opacity),
                 "coordinates": [
                     [lng_min, lat_max],  # top-left (lon, lat)
                     [lng_max, lat_max],  # top-right
@@ -180,7 +189,7 @@ def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, l
     return fig
 
 
-def update_heatmap_figure(filtering_state, map_layout):
+def update_heatmap_figure(filtering_state, map_layout, scale=0, opacity=0.6):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     center_lat, center_lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
     lat_min, lat_max, lng_min, lng_max, _ = extract_bounds_zoom_from_layout(map_layout)
@@ -189,20 +198,128 @@ def update_heatmap_figure(filtering_state, map_layout):
     within_bounds = filter_geographic_bounds(gs.get_data(), lat_min=lat_min, lat_max=lat_max,
                                             lng_min=lng_min, lng_max=lng_max)
     fig = create_heatmap_figure(within_bounds, zoom=zoom, center={"lat": center_lat, "lon": center_lng},
-                                lat_min=lat_min, lat_max=lat_max, lng_min=lng_min, lng_max=lng_max)
+                                lat_min=lat_min, lat_max=lat_max, lng_min=lng_min, lng_max=lng_max,
+                                scale=scale, opacity=opacity)
     return fig
 
 
 
 @app.callback(Output('filter-ui-trigger', 'value', allow_duplicate=True),
+              Output('SeveritySelectAll','value'),
+              [Input('Severity', 'value')],
+              prevent_initial_call=True)
+def Severity_updated(Severity):
+    global filter_dict
+    string = ""
+    if not Severity: #No category 
+        if "Severity" in filter_dict: # Excessive error catching
+            filter_dict.pop("Severity")
+    else:
+        for i in Severity:
+            string += f"Severity == {i} | "
+        string = string[:-3]
+        filter_dict["Severity"] = string
+    if len(Severity)<4:
+        return time(), []
+    else:
+        return time(), ["Select All"] # return a dummy value to trigger the next callback
+    
+
+
+@app.callback(Output('weather-dropdown', 'value', allow_duplicate=True),
+              [Input('WeatherSelectAll','value'),
+               State('weather-dropdown','value')],
+              prevent_initial_call=True)
+def weatherSelectAll(selectAll,weather):
+    if len(selectAll)==1:
+        return weather_options
+    else:
+        return weather
+
+@app.callback(Output('filter-ui-trigger', 'value', allow_duplicate=True),
+              Output('WeatherSelectAll', 'value'),
               [Input('weather-dropdown', 'value')],
               prevent_initial_call=True)
 def weather_dropdown_updated(selected_weather):
     global filter_dict
-    filter_dict["weather"] = f"Weather_Group == '{selected_weather}'"
+    string = ""
+    if not selected_weather: #No category 
+        if "weather" in filter_dict: # Excessive error catching
+            filter_dict.pop("weather")
+    else:
+        for i in selected_weather:
+            string += f"Weather_Group == '{i}' | "
+        string = string[:-3]
+        filter_dict["weather"] = string
+    if len(selected_weather)<len(weather_options):
+        return time(), []
+    else:
+        return time(), ["Select All"] # return a dummy value to trigger the next callback
+
+
+
+@app.callback(Output('Surrounding', 'value', allow_duplicate=True),
+              [Input('SurroundingSelectAll','value'),
+               State('Surrounding','value')],
+              prevent_initial_call=True)
+def surroundingSelectAll(selectAll,surrounding):
+    if len(selectAll)==1:
+        return ['Crossing',"Junction","Stop","Traffic_Signal"]
+    else:
+        return surrounding
+
+@app.callback(Output('filter-ui-trigger', 'value', allow_duplicate=True),
+              Output('SurroundingSelectAll','value'),
+              [Input('Surrounding', 'value')],
+              prevent_initial_call=True)
+def surrounding_updated(selected_surrounding):
+    global filter_dict
+    string = ""
+    if not selected_surrounding: #No category 
+        if "surrounding" in filter_dict: # Excessive error catching
+            filter_dict.pop("surrounding")
+    else:
+        for i in selected_surrounding:
+            string += f"{i} == True | "
+        string = string[:-3]
+        filter_dict["surrounding"] = string
+    if len(selected_surrounding)<4:
+        return time(), []
+    else:
+        return time(), ["Select All"] # return a dummy value to trigger the next callback
+
+
+@app.callback(Output('Day', 'value', allow_duplicate=True),
+              [Input('DaySelectAll','value'),
+               State('Day','value')],
+              prevent_initial_call=True)
+def daySelectAll(selectAll,Day):
+    if len(selectAll)==1:
+        return ['Day','Night']
+    else:
+        return Day
+
+@app.callback(Output('filter-ui-trigger', 'value', allow_duplicate=True),
+              Output('DaySelectAll','value'),
+              [Input('Day', 'value')],
+              prevent_initial_call=True)
+def day_updated(selected_day):
+    global filter_dict
+    string = ""
+    if not selected_day: #No category 
+        if "Day" in filter_dict: # Excessive error catching
+            filter_dict.pop("Day")
+    else:
+        for i in selected_day:
+            string += f"Sunrise_Sunset == '{i}' | "
+        string = string[:-3]
+        filter_dict["Day"] = string
+    if len(selected_day)<2:
+        return time(), []
+    else:
+        return time(), ["Select All"] # return a dummy value to trigger the next callback
 
     return time() # return a dummy value to trigger the next callback
-
 
 @app.callback(Output('filter-ui-trigger', 'value', allow_duplicate=True),
                 [Input('date-range-slider', 'value')],
@@ -380,15 +497,17 @@ def extract_bounds_zoom_from_layout(layout):
 
 
 
-def create_hexbin_figure(df, zoom=3, center=None):
+def create_hexbin_figure(df, zoom=3, center=None, scale=0, opacity=1):
+    color, range = get_color_and_range(scale==0, df['n_accidents'])
     fig = px.choropleth_map(
         df,
         geojson=gs.get_h3_geojson(),
         locations='h3cell',
         featureidkey='properties.h3cell',
-        color='n_accidents',
+        color= color,
         color_continuous_scale="Viridis",
         map_style="light",
+        opacity=opacity,
         zoom=zoom,
         #range_color=[0, df['n_accidents'].quantile(0.9)],
         center=center,
@@ -401,36 +520,55 @@ def create_hexbin_figure(df, zoom=3, center=None):
 
 
 # called by the more general update_figure function below
-def update_hexbin_figure(filtering_state, map_layout):
+def update_hexbin_figure(filtering_state, map_layout,scale,opacity):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
-    fig = create_hexbin_figure(gs.get_binned_data(), zoom=zoom, center={"lat": lat, "lon": lng})
+    fig = create_hexbin_figure(gs.get_binned_data(), zoom=zoom, center={"lat": lat, "lon": lng},
+                               scale=scale, opacity=opacity)
     return fig
 
 
-def create_county_figure(df, zoom=3, center=None):
+def get_color_and_range(is_log, accidents):
+    if is_log:
+        accidents = np.array(accidents)
+        # replace zeros with small value to avoid -inf in log scale
+        accidents[accidents == 0] = 0.1
+        accidentsLog = np.log10(
+            np.array(accidents),
+        )
+        return accidentsLog, [np.min(accidentsLog),np.max(accidentsLog)]
+    else:
+        return accidents, [0, accidents.quantile(0.95)]
+
+
+
+def create_county_figure(df, zoom=3, center=None, scale=0,opacity=1):
+    color, range = get_color_and_range(scale==0, df['n_accidents'])
     fig = px.choropleth_map(
         df,
         geojson=gs.get_counties_geojson(),
         locations='GEOID',
         featureidkey='properties.GEOID',
-        color='n_accidents',
-        color_continuous_scale="viridis",
+        color= color,
+        color_continuous_scale="Viridis",
         map_style="light",
         zoom=zoom,
-        #range_color=[0, df['n_accidents'].quantile(0.9)],
+        range_color=range,
         center=center,
         hover_data={'NAME': True, 'n_accidents': True},
+        labels = {'NAME':'County'},
+        opacity=opacity,
         width=1000,
         height=700
     )   
     return fig
 
 
-def update_county_figure(filtering_state, map_layout):
+def update_county_figure(filtering_state, map_layout,scale=0,opacity=1):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     lat, lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
-    fig = create_county_figure(gs.get_binned_data(), zoom=zoom, center={"lat": lat, "lon": lng})
+    fig = create_county_figure(gs.get_binned_data(), zoom=zoom, center={"lat": lat, "lon": lng},
+                                scale=scale, opacity=opacity)
     return fig
 
 
@@ -440,35 +578,37 @@ def update_county_figure(filtering_state, map_layout):
 @app.callback(Output('map_figure', 'figure'),
               [Input('filtered-state', 'value'),
                Input('map_layout', 'data'),
-               Input('plot-type-radio', 'value')],
+               Input('plot-type-radio', 'value'),
+               Input('color-scale', 'value'),
+               Input('opacity', 'value')],
               prevent_initial_call=True,
               running=[
                   (Output('progress-indicator-gif', 'style'),
-            {
-                'top': '10px',
-                'right': '10px',
-                'width': '50px',
-                'height': '50px',
-                'maxWidth': '50px',
-                'opacity': 1,
-                'zIndex': 1000
-            }, 
-            
-             {
-                'top': '10px',
-                'right': '10px',
-                'width': '50px',
-                'height': '50px',
-                'maxWidth': '50px',
-                'opacity': 0,
-                'zIndex': 1000
-            }, 
-            )
+                   {
+                       'top': '10px',
+                       'right': '10px',
+                       'width': '50px',
+                       'height': '50px',
+                       'maxWidth': '50px',
+                       'opacity': 1,
+                       'zIndex': 1000
+                   },
+                   {
+                       'top': '10px',
+                       'right': '10px',
+                       'width': '50px',
+                       'height': '50px',
+                       'maxWidth': '50px',
+                       'opacity': 0,
+                       'zIndex': 1000
+                   }
+                  )
               ])
-def update_figure(filtering_state, layout, selected_plot_type):
+def update_figure(filtering_state, layout, selected_plot_type, scale, opacity):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     global current_plot_type
-
+    
+    # For color scale
     # If we are within scatter plot zoom range, always use scatter plot
     # Otherwise, use the selected plot type
 
@@ -491,11 +631,11 @@ def update_figure(filtering_state, layout, selected_plot_type):
         last_plot_type_before_scatter = current_plot_type
 
     if current_plot_type == 'county':
-        return update_county_figure(filtering_state, layout)
+        return update_county_figure(filtering_state, layout, scale, opacity)
     elif current_plot_type == 'hexbin':
-        return update_hexbin_figure(filtering_state, layout)
+        return update_hexbin_figure(filtering_state, layout, scale, opacity)
     elif current_plot_type == 'heatmap':
-        return update_heatmap_figure(filtering_state, layout)
+        return update_heatmap_figure(filtering_state, layout, scale, opacity)
 
 
 
@@ -504,99 +644,159 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
         id='panel-group',
         direction='horizontal',
         children=[
-        # Left slim Filters panel
-        Panel(defaultSizePercentage=20,
-            children=[
-            html.H2("Filters"),
-            html.H3("Weather Condition"),
-            dcc.Dropdown(
-                id='weather-dropdown',
-                options=weather_options,
-                value='Clear',
-                clearable=False,
-                style={'marginBottom': '12px'}
-            ),
-            html.H3("Date"),
-            dcc.RangeSlider(
-                id='date-range-slider',
-                min=min_date.toordinal(),
-                max=max_date.toordinal(),
-                value=[min_date.toordinal(), max_date.toordinal()],
-                marks={date.toordinal(): date.strftime('%Y') for date in pd.date_range(min_date, max_date, freq='YE')}, # Show all years as marks
-            ),
-            html.Div(
-                id='selected-date-range',
-                children=f"Selected range: NOT IMPLEMENTED YET",
-                style={'marginTop': '12px', 'fontWeight': '600'}
-            )
-        ]),
-        PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
-        # Middle large map panel
-        Panel(style={
-            'flex': '1',
-            'padding': '8px',
-            'boxSizing': 'border-box',
-            'display': 'flex',
-            'flexDirection': 'column',
-            'alignItems': 'stretch',
-            'justifyContent': 'stretch'
-        }, 
-        defaultSizePercentage=50,
-        children=[
-            dcc.RadioItems(
-            id='plot-type-radio',
-            options=[
-            {'label': 'County', 'value': 'county'},
-            {'label': 'Hexagon', 'value': 'hexbin'},
-            {'label': 'Heatmap', 'value': 'heatmap'},
-            {'label': 'Scatter (zoom in to enable)', 'value': 'scatter', 'disabled': True}
-            ],
-            value='county',
-            labelStyle={'display': 'inline-block', 'marginBottom': '6px'}
-            ),
-            html.Div(
-            id='progress-indicator-container',
-            children=[
-            html.Img(
-            id='progress-indicator-gif',
-            src='assets/progress_indicator.gif',
-            style={
-                'top': '10px',
-                'right': '10px',
-                'width': '50px',
-                'height': '50px',
-                'maxWidth': '50px',
-                'objectFit': 'contain',  # Ensure the image scales correctly
-                'opacity': 0,
-                'zIndex': 1000
-            }
-            ),
-            ]
-            ),
-            dcc.Graph(
-            id="map_figure",
-            figure=create_county_figure(gs.get_binned_data(), zoom=START_ZOOM, center=START_COORDINATES),
-            style={'flex': '1', 'minHeight': '0'}  # allow the graph to fill vertical space
-            )
-        ]),
-        PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
-        # Right panel for plots
-        Panel(style={
-            'overflowY': 'auto'
-        }, 
-        children=[
-            html.H2("Plots"),
-            html.P("Add plot components here."),
-            html.Details([
-                html.Summary("Accidents Over Time"),
-                chart_time.layout
+            # Left slim Filters panel
+            Panel(defaultSizePercentage=20,
+                children=[
+                    html.H2("Filters"),
+                    html.H3("Severity"),
+                    dcc.Checklist(['Select All'],
+                                  ['Select All'],
+                                  id='SeveritySelectAll'),
+                    dcc.Dropdown(
+                        options=[1, 2, 3, 4],
+                        value=[1, 2, 3, 4],
+                        id="Severity",
+                        clearable=True,
+                        multi=True,
+                    ),
+                    html.H3("Weather Condition"),
+                    dcc.Checklist(['Select All'],
+                                  ['Select All'],
+                                  id='WeatherSelectAll'),
+                    dcc.Dropdown(
+                        id='weather-dropdown',
+                        options=weather_options,
+                        value=weather_options,
+                        clearable=True,
+                        style={'marginBottom': '12px'},
+                        multi=True,
+                    ),
+                    html.H3("Time of Day"),
+                    dcc.Checklist(['Select All'],
+                                  ['Select All'],
+                                  id='DaySelectAll'),
+                    dcc.Dropdown(
+                        id='Day',
+                        options=["Day", "Night"],
+                        value=["Day", "Night"],
+                        clearable=True,
+                        multi=True,
+                    ),
+                    html.H3("Surrounding infrastructure"),
+                    dcc.Checklist(['Select All'],
+                                  ['Select All'],
+                                  id='SurroundingSelectAll'),
+                    dcc.Dropdown(
+                        options=['Crossing', "Junction", "Stop", "Traffic_Signal"],
+                        value=['Crossing', "Junction", "Stop", "Traffic_Signal"],
+                        id="Surrounding",
+                        clearable=True,
+                        multi=True,
+                    ),
+                    html.H3("Date"),
+                    dcc.RangeSlider(
+                        id='date-range-slider',
+                        min=min_date.toordinal(),
+                        max=max_date.toordinal(),
+                        value=[min_date.toordinal(), max_date.toordinal()],
+                        marks={date.toordinal(): date.strftime('%Y') for date in pd.date_range(min_date, max_date, freq='YE')},  # Show all years as marks
+                    ),
+                    html.Div(
+                        id='selected-date-range',
+                        children=f"Selected range: NOT IMPLEMENTED YET",
+                        style={'marginTop': '12px', 'fontWeight': '600'}
+                    ),
+                ]),
+            PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
+            # Middle large map panel
+            Panel(style={
+                'flex': '1',
+                'padding': '8px',
+                'boxSizing': 'border-box',
+                'display': 'flex',
+                'flexDirection': 'column',
+                'alignItems': 'stretch',
+                'justifyContent': 'stretch'
+            }, children=[
+                dcc.RadioItems(
+                    id='plot-type-radio',
+                    options=[
+                        {'label': 'County', 'value': 'county'},
+                        {'label': 'Hexagon', 'value': 'hexbin'},
+                        {'label': 'Heatmap', 'value': 'heatmap'},
+                        {'label': 'Scatter (zoom in to enable)', 'value': 'scatter', 'disabled': True}
+                    ],
+                    value='county',
+                    labelStyle={'display': 'inline-block', 'marginBottom': '6px'}
+                ),
+                html.Div([
+                    html.Label('Color Scale'),
+                    dcc.RadioItems(
+                        id='color-scale',
+                        options=[
+                            {'label':'log10','value':0},
+                            {'label':'linear','value':1}],
+                        value=0,
+                        labelStyle={'display': 'inline-block', 'marginBottom': '6px'},
+                        style={"margin-right": "50px"},
+                    ),
+                ]),
+                html.Div(
+                    id='progress-indicator-container',
+                    children=[
+                        html.Img(
+                            id='progress-indicator-gif',
+                            src='assets/progress_indicator.gif',
+                            style={
+                                'top': '10px',
+                                'right': '10px',
+                                'width': '50px',
+                                'height': '50px',
+                                'maxWidth': '50px',
+                                'objectFit': 'contain',  # Ensure the image scales correctly
+                                'opacity': 0,
+                                'zIndex': 1000
+                            }
+                        ),
+                    ]
+                ),
+                html.Div([
+                    html.Label('Opacity'),
+                    dcc.Slider(
+                        id='opacity',
+                        min=0.3,
+                        max=1,
+                        value=1,
+                        marks={
+                            0.3: "0.3",
+                            1: "1",
+                        }
+                    ),
+                ], style={'width': '30%'}),
+                dcc.Graph(
+                    id="map_figure",
+                    figure=create_county_figure(gs.get_binned_data(), zoom=START_ZOOM, center=START_COORDINATES),
+                    style={'flex': '1', 'minHeight': '0'}  # allow the graph to fill vertical space
+                )
             ]),
-            html.Details([
-                html.Summary("Accidents by Weather"),
-                chart_weather.layout
-            ])
+            PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
+            # Right panel for plots
+            Panel(style={
+                'overflowY': 'auto'
+            },
+                children=[
+                    html.H2("Plots"),
+                    html.P("Add plot components here."),
+                    html.Details([
+                        html.Summary("Accidents Over Time"),
+                        chart_time.layout
+                    ]),
+                    html.Details([
+                        html.Summary("Accidents by Weather"),
+                        chart_weather.layout
+                    ])
+                ]),
         ]),
-    ]),
 
     # Hidden/input stores (kept at root)
     dcc.Input(id='filtered-state', type='hidden', value='init'),
@@ -606,7 +806,6 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
         # [[mid_lat, mid_lon], zoom, [top_lat, left_lon, bottom_lat, right_lon]]
         [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM, [-1, -1, 1, 1]]
     ])
-
 ])
 
 # Register callbacks from other modules

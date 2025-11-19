@@ -36,7 +36,7 @@ def load_data(data_folder="/data/", subset_accidents = None, logger=None):
         'End_Lat', 'End_Lng', 'Distance(mi)', #'Description',
         'County', 'State', 'Zipcode', 'Timezone', 'Weather_Condition', "h3cell",
         "geoid", 'hour', 'weekday', 'month', 'year', 'season', "Weather_Group",
-        "h3cell_fine"
+        "h3cell_fine", "Junction", "Stop", "Traffic_Signal", "Sunrise_Sunset", "Crossing"
     ]
     _current_data = _current_data[relevant_columns]
     _current_data["density_z"] = 0.0001  # default value for heatmap z
