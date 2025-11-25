@@ -14,7 +14,7 @@ from time import time
 import logging
 import global_state as gs
 from shapely import box
-from datetime import date
+from datetime import date, datetime
 import dash_bootstrap_components as dbc
 from dash_resizable_panels import PanelGroup, Panel, PanelResizeHandle
 
@@ -264,7 +264,7 @@ def weather_dropdown_updated(selected_weather):
               prevent_initial_call=True)
 def surroundingSelectAll(selectAll,surrounding):
     if len(selectAll)==1:
-        return ['Crossing',"Junction","Stop","Traffic_Signal"]
+        return ['Crossing',"Junction","Stop","Traffic_Signal","No_Surroundings"]
     else:
         return surrounding
 
@@ -280,10 +280,14 @@ def surrounding_updated(selected_surrounding):
             filter_dict.pop("surrounding")
     else:
         for i in selected_surrounding:
-            string += f"{i} == True | "
+            if i=="No_Surroundings":
+                string += "(Crossing== False & Traffic_Signal == False & Stop== False & Junction == False) | "
+            else: 
+                string += f"{i} == True | "
         string = string[:-3]
         filter_dict["surrounding"] = string
-    if len(selected_surrounding)<4:
+    print(string)
+    if len(selected_surrounding)<5:
         return time(), []
     else:
         return time(), ["Select All"] # return a dummy value to trigger the next callback
@@ -322,6 +326,8 @@ def day_updated(selected_day):
     return time() # return a dummy value to trigger the next callback
 
 @app.callback(Output('filter-ui-trigger', 'value', allow_duplicate=True),
+                Output('dateRange','start_date'),
+                Output('dateRange','end_date'),
                 [Input('date-range-slider', 'value')],
                 prevent_initial_call=True)
 def time_range_updated(selected_range):
@@ -331,7 +337,15 @@ def time_range_updated(selected_range):
     max_date = date.fromordinal(int(max_date))
     filter_dict["time"] = f"Start_Time >= '{min_date}' & Start_Time <= '{max_date}'"
 
-    return time() # return a dummy value to trigger the next callback
+    return time(), str(min_date), str(max_date) # return a dummy value to trigger the next callback
+
+@app.callback(Output('date-range-slider', 'value', allow_duplicate=True),
+                [Input('dateRange', 'start_date'),
+                 Input('dateRange', 'end_date')],
+                prevent_initial_call=True)
+def time_range_updated(start,end):
+    return (datetime.strptime(start,'%Y-%m-%d').toordinal(), datetime.strptime(end,'%Y-%m-%d').toordinal())
+
 
 @app.callback(Output('filtered-state', 'value'),
               Input('filter-ui-trigger', 'value'),
@@ -498,7 +512,7 @@ def extract_bounds_zoom_from_layout(layout):
 
 
 def create_hexbin_figure(df, zoom=3, center=None, scale=0, opacity=1):
-    color, range = get_color_and_range(scale==0, df['n_accidents'])
+    color, _ = get_color_and_range(scale==0, df['n_accidents'])
     fig = px.choropleth_map(
         df,
         geojson=gs.get_h3_geojson(),
@@ -515,7 +529,11 @@ def create_hexbin_figure(df, zoom=3, center=None, scale=0, opacity=1):
         width=1000,
         height=700
     )
-    fig.update_traces(marker_line_width=0,)
+    fig.update_coloraxes(colorbar_title={"text":"Color Scale"})
+    fig.update_coloraxes(colorbar_ticks="outside")
+    fig.update_coloraxes(colorbar_tickvals=[i for i in range(8)])
+    fig.update_coloraxes(colorbar_ticktext=[int(10**e) for e in range(8)])
+    fig.update_traces(marker_line_width=0.1)
     return fig
 
 
@@ -543,7 +561,7 @@ def get_color_and_range(is_log, accidents):
 
 
 def create_county_figure(df, zoom=3, center=None, scale=0,opacity=1):
-    color, range = get_color_and_range(scale==0, df['n_accidents'])
+    color, _ = get_color_and_range(scale==0, df['n_accidents'])
     fig = px.choropleth_map(
         df,
         geojson=gs.get_counties_geojson(),
@@ -553,7 +571,7 @@ def create_county_figure(df, zoom=3, center=None, scale=0,opacity=1):
         color_continuous_scale="Viridis",
         map_style="light",
         zoom=zoom,
-        range_color=range,
+        #range_color=range,
         center=center,
         hover_data={'NAME': True, 'n_accidents': True},
         labels = {'NAME':'County'},
@@ -561,6 +579,10 @@ def create_county_figure(df, zoom=3, center=None, scale=0,opacity=1):
         width=1000,
         height=700
     )   
+    fig.update_coloraxes(colorbar_title={"text":"Color Scale"})
+    fig.update_coloraxes(colorbar_ticks="outside")
+    fig.update_coloraxes(colorbar_tickvals=[i for i in range(8)])
+    fig.update_coloraxes(colorbar_ticktext=[int(10**e) for e in range(8)])
     return fig
 
 
@@ -579,7 +601,6 @@ def update_county_figure(filtering_state, map_layout,scale=0,opacity=1):
               [Input('filtered-state', 'value'),
                Input('map_layout', 'data'),
                Input('plot-type-radio', 'value'),
-               Input('color-scale', 'value'),
                Input('opacity', 'value')],
               prevent_initial_call=True,
               running=[
@@ -604,7 +625,7 @@ def update_county_figure(filtering_state, map_layout,scale=0,opacity=1):
                    }
                   )
               ])
-def update_figure(filtering_state, layout, selected_plot_type, scale, opacity):
+def update_figure(filtering_state, layout, selected_plot_type, opacity):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     global current_plot_type
     
@@ -629,7 +650,7 @@ def update_figure(filtering_state, layout, selected_plot_type, scale, opacity):
     else:
         global last_plot_type_before_scatter
         last_plot_type_before_scatter = current_plot_type
-
+    scale = 0 #hardcode to log easily this way without deleting all the code
     if current_plot_type == 'county':
         return update_county_figure(filtering_state, layout, scale, opacity)
     elif current_plot_type == 'hexbin':
@@ -646,66 +667,80 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
         children=[
             # Left slim Filters panel
             Panel(defaultSizePercentage=20,
-                children=[
-                    html.H2("Filters"),
-                    html.H3("Severity"),
-                    dcc.Checklist(['Select All'],
-                                  ['Select All'],
-                                  id='SeveritySelectAll'),
-                    dcc.Dropdown(
-                        options=[1, 2, 3, 4],
-                        value=[1, 2, 3, 4],
-                        id="Severity",
-                        clearable=True,
-                        multi=True,
-                    ),
-                    html.H3("Weather Condition"),
-                    dcc.Checklist(['Select All'],
-                                  ['Select All'],
-                                  id='WeatherSelectAll'),
-                    dcc.Dropdown(
-                        id='weather-dropdown',
-                        options=weather_options,
-                        value=weather_options,
-                        clearable=True,
-                        style={'marginBottom': '12px'},
-                        multi=True,
-                    ),
-                    html.H3("Time of Day"),
-                    dcc.Checklist(['Select All'],
-                                  ['Select All'],
-                                  id='DaySelectAll'),
-                    dcc.Dropdown(
-                        id='Day',
-                        options=["Day", "Night"],
-                        value=["Day", "Night"],
-                        clearable=True,
-                        multi=True,
-                    ),
-                    html.H3("Surrounding infrastructure"),
-                    dcc.Checklist(['Select All'],
-                                  ['Select All'],
-                                  id='SurroundingSelectAll'),
-                    dcc.Dropdown(
-                        options=['Crossing', "Junction", "Stop", "Traffic_Signal"],
-                        value=['Crossing', "Junction", "Stop", "Traffic_Signal"],
-                        id="Surrounding",
-                        clearable=True,
-                        multi=True,
-                    ),
-                    html.H3("Date"),
-                    dcc.RangeSlider(
-                        id='date-range-slider',
-                        min=min_date.toordinal(),
-                        max=max_date.toordinal(),
-                        value=[min_date.toordinal(), max_date.toordinal()],
-                        marks={date.toordinal(): date.strftime('%Y') for date in pd.date_range(min_date, max_date, freq='YE')},  # Show all years as marks
-                    ),
-                    html.Div(
-                        id='selected-date-range',
-                        children=f"Selected range: NOT IMPLEMENTED YET",
-                        style={'marginTop': '12px', 'fontWeight': '600'}
-                    ),
+                    style={
+                        'flex': '1',
+                        'padding': '8px',
+                        'boxSizing': 'border-box',
+                        'display': 'flex',
+                        'flexDirection': 'column',
+                        'alignItems': 'stretch',
+                        'justifyContent': 'stretch',
+                        'overflow':'scroll',
+                    },
+                    children = [
+                        html.H2("Filters"),
+                        html.H3("Severity"),
+                        dcc.Checklist(['Select All'],
+                                    [],
+                                    id='SeveritySelectAll'),
+                        dcc.Dropdown(
+                            options=[1, 2, 3, 4],
+                            value=[],
+                            id="Severity",
+                            clearable=True,
+                            multi=True,
+                        ),
+                        html.H3("Weather Condition"),
+                        dcc.Checklist(['Select All'],
+                                    [],
+                                    id='WeatherSelectAll'),
+                        dcc.Dropdown(
+                            id='weather-dropdown',
+                            options=weather_options,
+                            value=[],
+                            clearable=True,
+                            style={'marginBottom': '12px'},
+                            multi=True,
+                        ),
+                        html.H3("Time of Day"),
+                        dcc.Checklist(['Select All'],
+                                    [],
+                                    id='DaySelectAll'),
+                        dcc.Dropdown(
+                            id='Day',
+                            options=["Day", "Night"],
+                            value=[],
+                            clearable=True,
+                            multi=True,
+                        ),
+                        html.H3("Surrounding infrastructure"),
+                        dcc.Checklist(['Select All'],
+                                    [],
+                                    id='SurroundingSelectAll'),
+                        dcc.Dropdown(
+                            options=['Crossing', "Junction", "Stop", "Traffic_Signal","No_Surroundings"],
+                            value=[],
+                            id="Surrounding",
+                            clearable=True,
+                            multi=True,
+                        ),
+                        html.H3("Date"),
+                        dcc.RangeSlider(
+                            id='date-range-slider',
+                            min=min_date.toordinal(),
+                            max=max_date.toordinal(),
+                            value=[min_date.toordinal(), max_date.toordinal()],
+                            marks={date.toordinal(): date.strftime('%Y') for date in pd.date_range(min_date, max_date, freq='YS')},  # Show all years as marks
+                        ),
+                        dcc.DatePickerRange(
+                            id="dateRange",
+                            month_format="YYYY-MM-DD",
+                            display_format="YYYY-MM-DD",
+                            min_date_allowed="2017-01-01",
+                            max_date_allowed="2022-12-31",
+                            start_date="2017-01-01",
+                            end_date= "2022-12-31",
+                        ),
                 ]),
             PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
             # Middle large map panel
@@ -716,72 +751,65 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                 'display': 'flex',
                 'flexDirection': 'column',
                 'alignItems': 'stretch',
-                'justifyContent': 'stretch'
+                'justifyContent': 'stretch',
+                'overflow':'scroll',
             }, children=[
-                dcc.RadioItems(
-                    id='plot-type-radio',
-                    options=[
-                        {'label': 'County', 'value': 'county'},
-                        {'label': 'Hexagon', 'value': 'hexbin'},
-                        {'label': 'Heatmap', 'value': 'heatmap'},
-                        {'label': 'Scatter (zoom in to enable)', 'value': 'scatter', 'disabled': True}
-                    ],
-                    value='county',
-                    labelStyle={'display': 'inline-block', 'marginBottom': '6px'}
-                ),
-                html.Div([
-                    html.Label('Color Scale'),
-                    dcc.RadioItems(
-                        id='color-scale',
+                html.Div(style = {'display': 'flex','flexDirection': 'row'},          
+                    children = [dcc.RadioItems(
+                        id='plot-type-radio',
                         options=[
-                            {'label':'log10','value':0},
-                            {'label':'linear','value':1}],
-                        value=0,
-                        labelStyle={'display': 'inline-block', 'marginBottom': '6px'},
-                        style={"margin-right": "50px"},
+                            {'label': 'County', 'value': 'county'},
+                            {'label': 'Hexagon', 'value': 'hexbin'},
+                            {'label': 'Heatmap', 'value': 'heatmap'},
+                            {'label': 'Scatter (zoom in to enable)', 'value': 'scatter', 'disabled': True}
+                        ],
+                        value='county',
+                        labelStyle={'display': 'inline-block', 'marginBottom': '6px'}
                     ),
-                ]),
-                html.Div(
-                    id='progress-indicator-container',
-                    children=[
-                        html.Img(
-                            id='progress-indicator-gif',
-                            src='assets/progress_indicator.gif',
-                            style={
-                                'top': '10px',
-                                'right': '10px',
-                                'width': '50px',
-                                'height': '50px',
-                                'maxWidth': '50px',
-                                'objectFit': 'contain',  # Ensure the image scales correctly
-                                'opacity': 0,
-                                'zIndex': 1000
+                    html.Div([
+                        html.Label('Opacity'),
+                        dcc.Slider(
+                            id='opacity',
+                            min=0.3,
+                            max=1,
+                            value=1,
+                            marks={
+                                0.3: "0.3",
+                                1: "1",
                             }
                         ),
-                    ]
-                ),
-                html.Div([
-                    html.Label('Opacity'),
-                    dcc.Slider(
-                        id='opacity',
-                        min=0.3,
-                        max=1,
-                        value=1,
-                        marks={
-                            0.3: "0.3",
-                            1: "1",
-                        }
+                    ], style={'width': '30%'}),
+                    html.Div(
+                        id='progress-indicator-container',
+                        children=[
+                            html.Img(
+                                id='progress-indicator-gif',
+                                src='assets/progress_indicator.gif',
+                                style={
+                                    'top': '10px',
+                                    'right': '10px',
+                                    'width': '50px',
+                                    'height': '50px',
+                                    'maxWidth': '50px',
+                                    'objectFit': 'contain',  # Ensure the image scales correctly
+                                    'opacity': 0,
+                                    'zIndex': 1000,
+                                    
+                                }
+                            ),
+                        ]
                     ),
-                ], style={'width': '30%'}),
+                ]),
                 dcc.Graph(
                     id="map_figure",
                     figure=create_county_figure(gs.get_binned_data(), zoom=START_ZOOM, center=START_COORDINATES),
                     style={'flex': '1', 'minHeight': '0'}  # allow the graph to fill vertical space
-                )
+                ),
             ]),
             PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
             # Right panel for plots
-            Panel(style={
+            Panel(defaultSizePercentage=10,
+                style={
                 'overflowY': 'auto'
             },
                 children=[

@@ -95,6 +95,7 @@ def filter_data(filter_dict : dict, logger=None):
     if len(filter_dict) == 0:
         if logger:
             logger.info("No filters applied, not filtering")
+            _current_data = _unfiltered_data
             return
     
     # Construct the filter string by joining the items
