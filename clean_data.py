@@ -32,7 +32,9 @@ geodata = geopandas.read_file(data_folder /"counties.geojson")
 population = pd.read_csv("data/co-est2021-alldata.csv",encoding="latin1")
 
 # ONLY TAKE CALIFORNIA
-traffic = traffic[traffic["State"]=="CA"].reset_index(drop=True)
+traffic = traffic[traffic["State"]=="CA"]
+# SORT ACCORDING TO DATE
+traffic = traffic.sort_values(by="Start_Time").reset_index(drop=True)
 
 print("Starting type conversion")
 traffic["ID"] = traffic["ID"].astype("string")

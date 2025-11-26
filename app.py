@@ -28,6 +28,9 @@ START_COORDINATES = {"lat": 36.4, "lon": -118.39} # Center on California
 START_ZOOM = 4.5
 SCATTER_PLOT_ZOOM_THRESHOLD = 10 # zoom level above which we switch to scatter plot
 
+PLOT_WIDTH = 700
+PLOT_HEIGHT = 500
+
 # global variable to hold the last map layout used for geographic filtering
 # We do this to avoid excessive geographic filtering when the user is just panning/zooming a little
 # around the same area
@@ -106,13 +109,12 @@ def create_scattermap_figure(df, zoom=3, center=None):
         zoom=zoom,
         center=center,
         map_style="light",
-        width=1000, 
-        height=700
+        width=PLOT_WIDTH, 
+        height=PLOT_HEIGHT,
+        opacity=0.7
     )
     
-    fig.update_traces(marker=dict(size=get_point_size(zoom)),
-                       opacity=get_opacity(zoom),
-                       marker_color='black')
+    fig.update_traces(cluster=dict(enabled=True))
     return fig
 
 @app.callback(Output('Severity', 'value', allow_duplicate=True),
@@ -125,23 +127,40 @@ def SeveritySelectAll(selectAll,Severity):
     else:
         return Severity
 
-def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, lng_min=None, lng_max=None, scale=0, opacity=0.6):
+def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, lng_min=None, lng_max=None, 
+                          detail_level=0,
+                           scale=0, opacity=0.6):
     # Create a density heatmap figure
 
-    np.random.seed(0)
     logger.info("Creating heatmap figure...")
     if lat_min is None or lat_min == -1:
         lng_min = df['Start_Lng'].min()
         lng_max = df['Start_Lng'].max()
         lat_min = df['Start_Lat'].min()
         lat_max = df['Start_Lat'].max()
+
+    if detail_level == 0:
+        sample_size = 10000
+        nx = 40
+        ny = 28
+    elif detail_level == 1:
+        sample_size = 50000
+        nx = 80
+        ny = 56
+    else:
+        sample_size = 200000
+        nx = 120
+        ny = 84
+
+    if len(df) > sample_size:
+        df = df.sample(sample_size)
     # 2. Compute density (heatmap) on a grid
-    xi = np.linspace(lng_min, lng_max, 40)
-    yi = np.linspace(lat_min, lat_max, 40)
+    xi = np.linspace(lng_min, lng_max, nx)
+    yi = np.linspace(lat_min, lat_max, ny)
     X, Y = np.meshgrid(xi, yi)
     kde_start_time = time()
 
-    if len(df) > 0:
+    if len(df) > 0: 
         kde = gaussian_kde(np.vstack([df['Start_Lng'], df['Start_Lat']]))
         Z = kde(np.vstack([X.ravel(), Y.ravel()])).reshape(X.shape)
     else:
@@ -165,41 +184,40 @@ def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, l
     fig = px.scatter_map(
         zoom=zoom,
         center=center,
-        map_style="light",
-        width=1000, 
-        height=700
+        map_style="dark",
+        width=PLOT_WIDTH, 
+        height=PLOT_HEIGHT
     )
-    print("OPACITY", opacity, type(opacity))
     fig.update_layout(
-        map_layers=[{
+        map_layers=[
+            {
                 "sourcetype": "image",
                 "below": '',
                 "source": "data:image/png;base64," + encoded,
-                "opacity": float(opacity),
+                "opacity": 0.4,
                 "coordinates": [
                     [lng_min, lat_max],  # top-left (lon, lat)
                     [lng_max, lat_max],  # top-right
                     [lng_max, lat_min],  # bottom-right
                     [lng_min, lat_min],  # bottom-left
                 ],
-            }],
-        ),
+            }
+        ],
+    )
 
 
     return fig
 
 
-def update_heatmap_figure(filtering_state, map_layout, scale=0, opacity=0.6):
+def update_heatmap_figure(filtering_state, map_layout, scale=0, opacity=0.6, detail_level=0):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     center_lat, center_lng, zoom = extract_lat_lng_zoom_from_layout(map_layout)
     lat_min, lat_max, lng_min, lng_max, _ = extract_bounds_zoom_from_layout(map_layout)
-    print("bonds:", lat_min, lat_max, lng_min, lng_max)
-    print("VENNERNE:", lat_min, lat_max, lng_min, lng_max)
     within_bounds = filter_geographic_bounds(gs.get_data(), lat_min=lat_min, lat_max=lat_max,
                                             lng_min=lng_min, lng_max=lng_max)
     fig = create_heatmap_figure(within_bounds, zoom=zoom, center={"lat": center_lat, "lon": center_lng},
                                 lat_min=lat_min, lat_max=lat_max, lng_min=lng_min, lng_max=lng_max,
-                                scale=scale, opacity=opacity)
+                                scale=scale, opacity=opacity, detail_level=detail_level)
     return fig
 
 
@@ -333,10 +351,13 @@ def time_range_updated(selected_range):
 
     return time() # return a dummy value to trigger the next callback
 
-@app.callback(Output('filtered-state', 'value'),
-              Input('filter-ui-trigger', 'value'),
+@app.callback([Output('filtered-state', 'value'),
+            Output('detail-level', 'data', allow_duplicate=True),
+            Output('map_layout', 'data', allow_duplicate=True)],
+              [Input('filter-ui-trigger', 'value'),
+               State('map_layout', 'data')],
               prevent_initial_call=True)
-def refilter_data(filter_ui_trigger):
+def refilter_data(filter_ui_trigger, map_layout=None):
     # filter_ui_trigger is a dummy variable to trigger updates whenever we change the filter UI
     global filter_dict
 
@@ -351,8 +372,11 @@ def refilter_data(filter_ui_trigger):
         gs.bin_data_by_county()
     elif current_plot_type == 'scatter':
         gs.update_spatial_index()
+    elif current_plot_type == 'heatmap':
+        gs.update_spatial_index()
 
-    return time()
+    return time(), {"level": 0, "level_zero_signature": list(extract_lat_lng_zoom_from_layout(map_layout))}, map_layout  # reset detail level on filter change
+
 
 
 # called by the more general update_figure function below
@@ -408,22 +432,23 @@ def brushed_data(selected_data):
 @app.callback(
     [Output('map_layout', 'data'),
      Output('plot-type-radio', 'options'),
-     Output('plot-type-radio', 'value')],
-    
+     Output('plot-type-radio', 'value'),
+     Output('detail-level', 'data', allow_duplicate=True)],
     [Input('map_figure', 'relayoutData'),
      State('plot-type-radio', 'value')],
+    prevent_initial_call='initial_duplicate',
 )
 def update_map_on_relayout(relayout_data, selected_plot_type):
     if relayout_data is None:
-        return dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     # Check if the center and zoom have moved since last time
     global map_layout_on_last_geofilter     
     global current_plot_type
 
     # Map movement thresholds before updating the geographic filter
-    max_dist = 0.01  # degrees
-    max_zoom_change = 0.1  # zoom levels
+    max_dist = 0.0001  # degrees
+    max_zoom_change = 0.10  # zoom levels
 
         # Whether we should update the map layout or not
     # This happens if we switch plot types, or if we are in scatter plot mode
@@ -444,14 +469,18 @@ def update_map_on_relayout(relayout_data, selected_plot_type):
             abs(relayout_data['map.center']['lon'] - map_layout_on_last_geofilter[0][1]) > max_dist or
             abs(relayout_data['map.zoom'] - map_layout_on_last_geofilter[1]) > max_zoom_change):
             logging.info("Map center and zoom change changed significantly, updating")
+            level_zero_signature = [relayout_data['map.center']['lat'], relayout_data['map.center']['lon'], relayout_data['map.zoom']]
             should_update_map = True
+    else:
+        level_zero_signature = [START_COORDINATES['lat'], START_COORDINATES['lon'], START_ZOOM]
 
     if not should_update_map:
         logging.info("Map center and zoom change not significant, not updating")
-        return dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
     else:
         logging.info("Updating map with new relayout data: %s", relayout_data)
         coordinates = relayout_data['map._derived']['coordinates']
+
         map_layout = [[
             relayout_data['map.center']['lat'], relayout_data['map.center']['lon']
         ], relayout_data['map.zoom'], [coordinates[3][1], coordinates[3][0], coordinates[1][1], coordinates[1][0]]]
@@ -472,8 +501,7 @@ def update_map_on_relayout(relayout_data, selected_plot_type):
         {'label': scatter_label, 'value': 'scatter', 'disabled': scatter_disabled}
     ]
 
-    return map_layout, plot_type_options, current_plot_type
-
+    return map_layout, plot_type_options, current_plot_type, {"level": 0, "level_zero_signature": level_zero_signature}  # reset detail level on map move
 
 def extract_lat_lng_zoom_from_layout(layout):
     if layout is None or len(layout) <= 1:
@@ -512,8 +540,8 @@ def create_hexbin_figure(df, zoom=3, center=None, scale=0, opacity=1):
         #range_color=[0, df['n_accidents'].quantile(0.9)],
         center=center,
         hover_data={'h3cell': True, 'n_accidents': True},
-        width=1000,
-        height=700
+        width=PLOT_WIDTH,
+        height=PLOT_HEIGHT
     )
     fig.update_traces(marker_line_width=0,)
     return fig
@@ -558,8 +586,8 @@ def create_county_figure(df, zoom=3, center=None, scale=0,opacity=1):
         hover_data={'NAME': True, 'n_accidents': True},
         labels = {'NAME':'County'},
         opacity=opacity,
-        width=1000,
-        height=700
+        width=PLOT_WIDTH,
+        height=PLOT_HEIGHT
     )   
     return fig
 
@@ -574,14 +602,33 @@ def update_county_figure(filtering_state, map_layout,scale=0,opacity=1):
 
 
 
+@app.callback(
+    Output('detail-level', 'data'),
+    [Input('progress-indicator-gif', 'style'),
+     State('plot-type-radio', 'value'),
+     State('detail-level', 'data'),
+     State('map_layout', 'data')],
+)
+def update_detail_level(progress_indicator_dummy, selected_plot_type, detail_level, map_layout):
+    # only increase detail level for heatmap plots
+    # and when the progress indicator is invisble (the previous plot has finished rendering)
+    if selected_plot_type == 'heatmap' and detail_level["level"] < 2 and progress_indicator_dummy['opacity'] == 0:
+        level_zero_signature = list(extract_lat_lng_zoom_from_layout(map_layout))
+        if level_zero_signature == detail_level["level_zero_signature"]:
+            logger.info(f"Heatmap detail level is {detail_level["level"]}, increasing by one")
+            return {"level": detail_level["level"] + 1, "level_zero_signature": detail_level["level_zero_signature"]}
+        else:
+            logger.info("Level zero signature changed, not increasing detail level")
+    return dash.no_update
+
 
 @app.callback(Output('map_figure', 'figure'),
               [Input('filtered-state', 'value'),
                Input('map_layout', 'data'),
                Input('plot-type-radio', 'value'),
                Input('color-scale', 'value'),
-               Input('opacity', 'value')],
-              prevent_initial_call=True,
+               Input('opacity', 'value'),
+               Input('detail-level', 'data')],
               running=[
                   (Output('progress-indicator-gif', 'style'),
                    {
@@ -604,7 +651,8 @@ def update_county_figure(filtering_state, map_layout,scale=0,opacity=1):
                    }
                   )
               ])
-def update_figure(filtering_state, layout, selected_plot_type, scale, opacity):
+def update_figure(filtering_state, layout, selected_plot_type, scale, opacity,
+                  detail_level):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     global current_plot_type
     
@@ -619,24 +667,29 @@ def update_figure(filtering_state, layout, selected_plot_type, scale, opacity):
             # Need to rebuild spatial index for filtered data
             gs.update_spatial_index()
             current_plot_type = 'scatter'
+        elif selected_plot_type == 'heatmap':
+            logger.info("Switching to heatmap plot")
+            gs.update_spatial_index()
+            current_plot_type = 'heatmap'
         else:
             current_plot_type = selected_plot_type
             global filter_dict
             refilter_data(filter_dict)
 
     if current_plot_type == 'scatter':
-        return update_scattermap_figure(filtering_state, layout)
+        fig = update_scattermap_figure(filtering_state, layout)
     else:
         global last_plot_type_before_scatter
         last_plot_type_before_scatter = current_plot_type
 
     if current_plot_type == 'county':
-        return update_county_figure(filtering_state, layout, scale, opacity)
+        fig = update_county_figure(filtering_state, layout, scale, opacity)
     elif current_plot_type == 'hexbin':
-        return update_hexbin_figure(filtering_state, layout, scale, opacity)
+        fig = update_hexbin_figure(filtering_state, layout, scale, opacity)
     elif current_plot_type == 'heatmap':
-        return update_heatmap_figure(filtering_state, layout, scale, opacity)
-
+        fig = update_heatmap_figure(filtering_state, layout, scale, opacity, detail_level["level"])
+    fig.update_layout(margin=dict(l=20, r=20, t=20, b=20))
+    return fig
 
 
 app.layout = html.Div(style={'height': '100vh'}, children=[
@@ -709,7 +762,7 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                 ]),
             PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
             # Middle large map panel
-            Panel(style={
+            Panel(defaultSizePercentage=50, style={
                 'flex': '1',
                 'padding': '8px',
                 'boxSizing': 'border-box',
@@ -790,11 +843,11 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                     html.Details([
                         html.Summary("Accidents Over Time"),
                         chart_time.layout
-                    ]),
+                    ], open=True),
                     html.Details([
                         html.Summary("Accidents by Weather"),
                         chart_weather.layout
-                    ])
+                    ], open=True)
                 ]),
         ]),
 
@@ -805,7 +858,10 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
     dcc.Store(id='map_layout', data=[
         # [[mid_lat, mid_lon], zoom, [top_lat, left_lon, bottom_lat, right_lon]]
         [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM, [-1, -1, 1, 1]]
-    ])
+    ]),
+    # Store for detail level in heatmap
+    # level zero signature keeps track of the map layout (product of zoom and pan)
+    dcc.Store(id='detail-level', data={"level": 0, "level_zero_signature": -1}), # 0: low, 1: medium, 2: high
 ])
 
 # Register callbacks from other modules
