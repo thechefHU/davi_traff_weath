@@ -96,6 +96,7 @@ traffic["weekday"] = traffic["Start_Time"].dt.day_name()
 traffic["month"] = traffic["Start_Time"].dt.month
 traffic["year"] = traffic["Start_Time"].dt.year
 
+traffic = traffic.query("year > 2016 & year < 2023")
 # Seasons
 def get_season(month):
     if month in [12, 1, 2]:
