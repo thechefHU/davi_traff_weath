@@ -413,30 +413,32 @@ def update_scattermap_figure(filtering_state, map_layout):
     return fig
 
 
-@app.callback(Input('map_figure', 'selectedData'))
-def brushed_data(selected_data):
-    if selected_data is None:
-        return
+@app.callback(Input('map_figure', 'selectedData'),)
+def selection_made(relayout_data):
 
-    logger.info("Brushed data points: %s", selected_data)
+    print("HEJEJ", relayout_data)
+    # if selected_data is None:
+    #     return
 
-    # Extract point indices from selected data
+    # logger.info("Brushed data points: %s", selected_data)
 
-    if current_plot_type == 'scatter':
-        point_indices = [point['customdata'][0] for point in selected_data['points']]
-        print(point_indices)
-        #logger.info("Brushed data point indices: %s", point_indices)
-        filter_str = f"ID in {point_indices}"
-        filter_dict["brushed"] = filter_str
-    elif current_plot_type in 'county':
-        counties = [point['location'] for point in selected_data['points']]
-        filter_str = f"geoid in {counties}"
-        filter_dict["brushed"] = filter_str
-    elif current_plot_type in 'hexbin':
-        pass  # hexbin brushing not implemented yet
+    # # Extract point indices from selected data
+
+    # if current_plot_type == 'scatter':
+    #     point_indices = [point['customdata'][0] for point in selected_data['points']]
+    #     print(point_indices)
+    #     #logger.info("Brushed data point indices: %s", point_indices)
+    #     filter_str = f"ID in {point_indices}"
+    #     filter_dict["brushed"] = filter_str
+    # elif current_plot_type in 'county':
+    #     counties = [point['location'] for point in selected_data['points']]
+    #     filter_str = f"geoid in {counties}"
+    #     filter_dict["brushed"] = filter_str
+    # elif current_plot_type in 'hexbin':
+    #     pass  # hexbin brushing not implemented yet
 
     
-    refilter_data(filter_ui_trigger=time())
+    # refilter_data(filter_ui_trigger=time())
 
 
 
@@ -454,7 +456,7 @@ def brushed_data(selected_data):
     prevent_initial_call='initial_duplicate',
 )
 def update_map_on_relayout(relayout_data, selected_plot_type):
-    if relayout_data is None:
+    if relayout_data is None or 'map.zoom' not in relayout_data or 'map.center' not in relayout_data:
         return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     # Check if the center and zoom have moved since last time
@@ -566,7 +568,6 @@ def create_hexbin_figure(df, zoom=3, center=None, scale=0, opacity=1):
         for i in range(1, 10):  # For each base value 1-9
             tickvals.append(np.log10(i * 10**e))
             ticktext.append(str(i * 10**e) if i == 1 else "")  # Only label powers of 10
-    logger.info("Tick values: %s", tickvals)
     fig.update_coloraxes(colorbar_tickvals=tickvals)
     fig.update_coloraxes(colorbar_ticktext=ticktext)
     fig.update_traces(marker_line_width=0.1)
@@ -596,7 +597,7 @@ def get_color_and_range(is_log, accidents):
 
 
 
-def create_county_figure(df, zoom=3, center=None, scale=0,opacity=1):
+def create_county_figure(df, zoom=3, center=None, scale=0,opacity=0.7):
     color, _ = get_color_and_range(scale==0, df['n_accidents'])
     fig = px.choropleth_map(
         df,
@@ -623,7 +624,6 @@ def create_county_figure(df, zoom=3, center=None, scale=0,opacity=1):
         for i in range(1, 10):  # For each base value 1-9
             tickvals.append(np.log10(i * 10**e))
             ticktext.append(str(i * 10**e) if i == 1 else "")  # Only label powers of 10
-    logger.info("Tick values: %s", tickvals)
     fig.update_coloraxes(colorbar_tickvals=tickvals)
     fig.update_coloraxes(colorbar_ticktext=ticktext)
     return fig
@@ -726,7 +726,59 @@ def update_figure(filtering_state, layout, selected_plot_type, detail_level, opa
     fig.update_layout(margin=dict(l=20, r=20, t=20, b=20))
     return fig
 
+# Add a callback for when "group-1-button" is clicked
+@app.callback(
+    Output('filtered-state', 'value', allow_duplicate=True),
+    Input('group-1-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def update_group_1_points(n_clicks):
+    if n_clicks is None:
+        return dash.no_update
+    # Count the number of points in the current figure
+    gs.set_comparison_group(1)
+    return time()
+# Add a callback for when "group-2-button" is clicked
+@app.callback(
+    Output('filtered-state', 'value', allow_duplicate=True),
+    Input('group-2-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def update_group_2_points(n_clicks):
+    if n_clicks is None:
+        return dash.no_update
+    # Count the number of points in the current figure
+    gs.set_comparison_group(2)
+    return time()
+# Add a callback for when "group-3-button" is clicked
+@app.callback(
+    Output('filtered-state', 'value', allow_duplicate=True),
+    Input('clear-groups-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def clear_comparison_groups(n_clicks):
+    if n_clicks is None:
+        return dash.no_update
+    # Count the number of points in the current figure
+    gs.clear_comparison_groups()
+    return time()
 
+
+@app.callback(
+    [Output('group-1-points', 'children'),
+     Output('group-2-points', 'children'),
+     Output('clear-groups-button', 'style')],
+     Input('filtered-state', 'value'),
+)
+def update_group_points_display(dummy_input):
+    if len(gs.active_comparison_groups()) == 0:
+        return "n=0", "n=0", {'display': 'none'}
+    else:
+        counts = [len(group) for group in gs._comparison_groups]
+        return (f"n={counts[0]:,}",
+                f"n={counts[1]:,}",
+                {'display': 'inline-block'}
+        )
 app.layout = html.Div(style={'height': '100vh'}, children=[
     PanelGroup(
         id='panel-group',
@@ -856,8 +908,24 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                 ]),
                 dcc.Graph(
                     id="map_figure",
-                    figure=create_county_figure(gs.get_binned_data(), zoom=START_ZOOM, center=START_COORDINATES),
+                    figure=create_county_figure(gs.get_binned_data(), zoom=START_ZOOM, center=START_COORDINATES).update_layout(margin=dict(l=20, r=20, t=20, b=20)),
                     style={'flex': '1', 'minHeight': '0'}  # allow the graph to fill vertical space
+                ),
+                html.Div(
+                    style={'display': 'flex', 'justifyContent': 'space-evenly', 'marginTop': '10px'},
+                    children=[
+                        html.Div([
+                            html.Button("Set comparison group 1", id="group-1-button", style={'backgroundColor': 'rgb(204, 102, 119)'}),
+                            html.Div("n=0", id="group-1-points", style={'textAlign': 'center', 'marginTop': '5px'})
+                        ]),
+                        html.Div([
+                            html.Button("Set comparison group 2", id="group-2-button", style={'backgroundColor': 'rgb(221, 204, 119)'}),
+                            html.Div("n=0", id="group-2-points", style={'textAlign': 'center', 'marginTop': '5px'})
+                        ]),
+                        html.Div([
+                            html.Button("Clear comparison groups", id="clear-groups-button", style={'display': 'False'}),
+                        ]),
+                    ]
                 ),
             ]),
             PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),

@@ -10,7 +10,6 @@ import geopandas as gpd
 
 _current_data = pd.DataFrame() # Dataframe holding the current data (one row for each accident)
 _current_binned_data = pd.DataFrame() # Dataframe holding the binned data (one row for each hex bin/county/state)
-
 _unfiltered_data = pd.DataFrame() # Dataframe holding the unfiltered data (one row for each accident)   
 
 _sindex = None # Spatial index for the current data
@@ -20,6 +19,7 @@ _counties_geojson = None
 
 _h3_df = None
 _counties_df = None
+_comparison_groups = [pd.DataFrame(), pd.DataFrame()]
 
 def load_data(data_folder="/data/", subset_accidents = None, logger=None):
     """
@@ -36,16 +36,14 @@ def load_data(data_folder="/data/", subset_accidents = None, logger=None):
         'End_Lat', 'End_Lng', 'Distance(mi)', #'Description',
         'County', 'State', 'Zipcode', 'Timezone', 'Weather_Condition', "h3cell",
         "geoid", 'hour', 'weekday', 'month', 'year', 'season', "Weather_Group",
-        "h3cell_fine", "Junction", "Stop", "Traffic_Signal", "Sunrise_Sunset", "Crossing"
+        "h3cell_fine", "Junction", "Stop", "Traffic_Signal", "Sunrise_Sunset", "Crossing",
     ]
     _current_data = _current_data[relevant_columns]
-    _current_data["density_z"] = 0.0001  # default value for heatmap z
     # Set Start_Lat and Start_Lng to float32 to save memory
     _current_data['Start_Lat'] = _current_data['Start_Lat'].astype('float32')
     _current_data['Start_Lng'] = _current_data['Start_Lng'].astype('float32')
     _current_data['End_Lat'] = _current_data['End_Lat'].astype('float32')
     _current_data['End_Lng'] = _current_data['End_Lng'].astype('float32')
-
     if logger is not None:
         logger.info("Converting to GeoDataFrame and building spatial index...")
     _current_data = gpd.GeoDataFrame(
@@ -162,6 +160,62 @@ def bin_data_by_county():
     set_binned_data(filtered_bins)
 
 
+def set_comparison_group(group_no):
+    """
+    Sets the comparison group for the data
+    """
+    global _current_data
+    global _comparison_groups
+    assert group_no in [1, 2, 3], "Group number must be 1, 2, or 3"
+    _comparison_groups[group_no - 1] = _current_data.copy()
+
+
+def active_comparison_groups():    
+    """
+    Returns a list of active comparison groups (non-empty)
+    """
+    global _comparison_groups
+    active_groups = []
+    for i, group in enumerate(_comparison_groups):
+        if not group.empty:
+            active_groups.append(i + 1)
+    return active_groups
+
+
+def get_active_comparison_data():
+    """
+    Return the _current_data concatenated with the active comparison groups.
+    Give each group a 'group' column indicating its group number.
+    The points from selected data get group 'Selected data'.
+    The 'group' column is categorical with the order: "Selected data", "Group 1", "Group 2", "Group 3".
+    """
+    global _current_data
+    global _comparison_groups
+    frames = []
+    current_data_copy = _current_data.copy()
+    current_data_copy['group'] = "Selected data"
+    frames.append(current_data_copy)
+    for i, group in enumerate(_comparison_groups):
+        if not group.empty:
+            group = group.copy()  # Avoid modifying the original group
+            group['group'] = f"Group {i + 1}"
+            frames.append(group)
+    combined = pd.concat(frames, ignore_index=True)
+    active_categories = ["Selected data"] + [f"Group {i + 1}" for i, group in enumerate(_comparison_groups) if not group.empty]
+    combined['group'] = pd.Categorical(
+        combined['group'],
+        categories=active_categories,
+        ordered=True
+    )
+    return combined
+
+
+def clear_comparison_groups():
+    """
+    Clears all comparison groups
+    """
+    global _comparison_groups
+    _comparison_groups = [pd.DataFrame(), pd.DataFrame()]
 
 def get_h3_geojson():
     return _h3_geojson

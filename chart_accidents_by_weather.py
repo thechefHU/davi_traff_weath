@@ -26,17 +26,36 @@ def register_callbacks(app):
 
 
 def update_chart():
-    counts = gs.get_data().groupby("Weather_Group",
-                                   observed=False).size().reset_index(name="count")
+    if len(gs.active_comparison_groups()) == 0:
+        # no comparison groups active, just show all data as one group
+        counts = gs.get_data().groupby("Weather_Group", observed=False).size().reset_index(name="count")
+        counts["group"] = "All Data"
+        counts["normalized_count"] = counts["count"] / counts["count"].sum()
+        counts["normalized_percentage_text"] = (100*counts["normalized_count"]).map("{:.1f}%".format)
+        fig = px.bar(
+            counts,
+            x="Weather_Group",
+            y="normalized_count",  
+            title=f"Accidents by Weather",
+            text="normalized_percentage_text",
+        )
+    else:
+        counts = gs.get_active_comparison_data().groupby(["Weather_Group", "group"], observed=False).size().reset_index(name="count")
+        counts["normalized_count"] = counts.groupby("group")["count"].transform(lambda x: x / x.sum())
+        counts["normalized_percentage_text"] = (100*counts["normalized_count"]).map("{:.1f}%".format)
+        fig = px.bar(
+                counts,
+                x="Weather_Group",
+                y="normalized_count",  
+                title=f"Accidents by Weather",
+                text="normalized_percentage_text",
+                barmode='group',
+                color='group',
+                color_discrete_sequence=px.colors.qualitative.Safe
+            )
 
     # histogram for all cases
-    fig = px.bar(
-        counts,
-        x="Weather_Group",
-        y="count",  
-        title=f"Accidents by Weather Group",
-        text="count"
-    )
+
 
     return fig
 

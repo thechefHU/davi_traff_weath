@@ -53,43 +53,38 @@ def register_callbacks(app):
 # --- Main Chart Logic ---
 def update_chart():
     df = gs.get_data()
-
-    # Error handling
-    if "Start_Time" not in df.columns:
-        return px.line(title="Error: 'Start_Time' column missing.")
-
-    # Convert TimeStamp to DateTime
-    if not pd.api.types.is_datetime64_any_dtype(df["Start_Time"]):
-        df = df.copy()
-        df["Start_Time"] = pd.to_datetime(df["Start_Time"], errors='coerce')
-
-    # If parsing failed -> drop. Double-check dropped amount
-    initial_count = len(df)
-    df = df.dropna(subset=["Start_Time"])
-    dropped_count = initial_count - len(df)
-
-    if dropped_count > 0:
-        print(f"⚠️ Warning: Dropped {dropped_count} rows due to invalid timestamps.")
-
-    if df.empty:
-        return px.line(title="No data available for this selection")
-
-    # 4. Dynamic Grouping. Snapping logic: based on our selected time window it finds the suitable time-frame to group by (quarters,months,weeks,years) to have
-    # a visually appealing nr of elements on the trend graph
-    # This automatically picks D/W/M/Q/Y based on the data range
-    time_rule, freq_label = get_natural_frequency(df, "Start_Time", target_points=30)
+    
 
     # 5. Resample/Group
-    counts = df.resample(time_rule, on="Start_Time").size().reset_index(name="count")
+    if len(gs.active_comparison_groups()) == 0:
+        # No comparison groups, just use main data
+        time_rule, freq_label = get_natural_frequency(df, "Start_Time", target_points=30)
+        counts = df.resample(time_rule, on="Start_Time").size().reset_index(name="count")
 
-    # 6. Plot
-    fig = px.line(
-        counts,
-        x="Start_Time",
-        y="count",  
-        title=f"Trend of Accidents",
-        markers=True
-    )
+        # 6. Plot
+        fig = px.line(
+            counts,
+            x="Start_Time",
+            y="count",  
+            title=f"Trend of Accidents ({freq_label})",
+            markers=True
+        )
+    else:
+        combined = gs.get_active_comparison_data()
+        time_rule, freq_label = get_natural_frequency(combined, "Start_Time", target_points=30)
+        grouper = pd.Grouper(key="Start_Time", freq=time_rule)
+        counts = combined.groupby([grouper, "group"]).size().reset_index(name="count")
+
+        # 6. Plot with comparison groups
+        fig = px.line(
+                counts,
+                x="Start_Time",
+                y="count",  
+                title=f"Trend of Accidents",
+                markers=True,
+                color='group',
+                color_discrete_sequence=px.colors.qualitative.Safe
+            )
     
     # 7. Layout Polish
     fig.update_layout(
