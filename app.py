@@ -558,10 +558,17 @@ def create_hexbin_figure(df, zoom=3, center=None, scale=0, opacity=1):
         width=PLOT_WIDTH,
         height=PLOT_HEIGHT
     )
-    fig.update_coloraxes(colorbar_title={"text":"Color Scale"})
+    fig.update_coloraxes(colorbar_title={"text":"No. of accidents"})
     fig.update_coloraxes(colorbar_ticks="outside")
-    fig.update_coloraxes(colorbar_tickvals=[i for i in range(8)])
-    fig.update_coloraxes(colorbar_ticktext=[int(10**e) for e in range(8)])
+    tickvals = []
+    ticktext = []
+    for e in range(8):  # For each exponent
+        for i in range(1, 10):  # For each base value 1-9
+            tickvals.append(np.log10(i * 10**e))
+            ticktext.append(str(i * 10**e) if i == 1 else "")  # Only label powers of 10
+    logger.info("Tick values: %s", tickvals)
+    fig.update_coloraxes(colorbar_tickvals=tickvals)
+    fig.update_coloraxes(colorbar_ticktext=ticktext)
     fig.update_traces(marker_line_width=0.1)
     return fig
 
@@ -608,10 +615,17 @@ def create_county_figure(df, zoom=3, center=None, scale=0,opacity=1):
         width=PLOT_WIDTH,
         height=PLOT_HEIGHT
     )   
-    fig.update_coloraxes(colorbar_title={"text":"Color Scale"})
+    fig.update_coloraxes(colorbar_title={"text":"No. of accidents"})
     fig.update_coloraxes(colorbar_ticks="outside")
-    fig.update_coloraxes(colorbar_tickvals=[i for i in range(8)])
-    fig.update_coloraxes(colorbar_ticktext=[int(10**e) for e in range(8)])
+    tickvals = []
+    ticktext = []
+    for e in range(8):  # For each exponent
+        for i in range(1, 10):  # For each base value 1-9
+            tickvals.append(np.log10(i * 10**e))
+            ticktext.append(str(i * 10**e) if i == 1 else "")  # Only label powers of 10
+    logger.info("Tick values: %s", tickvals)
+    fig.update_coloraxes(colorbar_tickvals=tickvals)
+    fig.update_coloraxes(colorbar_ticktext=ticktext)
     return fig
 
 
@@ -649,7 +663,6 @@ def update_detail_level(progress_indicator_dummy, selected_plot_type, detail_lev
               [Input('filtered-state', 'value'),
                Input('map_layout', 'data'),
                Input('plot-type-radio', 'value'),
-               Input('opacity', 'value'),
                Input('detail-level', 'data')],
               prevent_initial_call=True,
               running=[
@@ -674,7 +687,7 @@ def update_detail_level(progress_indicator_dummy, selected_plot_type, detail_lev
                    }
                   )
               ])
-def update_figure(filtering_state, layout, selected_plot_type, opacity, detail_level):
+def update_figure(filtering_state, layout, selected_plot_type, detail_level, opacity=0.6):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     global current_plot_type
     
