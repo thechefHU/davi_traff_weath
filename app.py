@@ -649,7 +649,8 @@ def update_detail_level(progress_indicator_dummy, selected_plot_type, detail_lev
               [Input('filtered-state', 'value'),
                Input('map_layout', 'data'),
                Input('plot-type-radio', 'value'),
-               Input('opacity', 'value')],
+               Input('opacity', 'value'),
+               Input('detail-level', 'data')],
               prevent_initial_call=True,
               running=[
                   (Output('progress-indicator-gif', 'style'),
@@ -673,7 +674,7 @@ def update_detail_level(progress_indicator_dummy, selected_plot_type, detail_lev
                    }
                   )
               ])
-def update_figure(filtering_state, layout, selected_plot_type, opacity):
+def update_figure(filtering_state, layout, selected_plot_type, opacity, detail_level):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     global current_plot_type
     
@@ -819,19 +820,6 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                         value='county',
                         labelStyle={'display': 'inline-block', 'marginBottom': '6px'}
                     ),
-                    html.Div([
-                        html.Label('Opacity'),
-                        dcc.Slider(
-                            id='opacity',
-                            min=0.3,
-                            max=1,
-                            value=1,
-                            marks={
-                                0.3: "0.3",
-                                1: "1",
-                            }
-                        ),
-                    ], style={'width': '30%'}),
                     html.Div(
                         id='progress-indicator-container',
                         children=[
@@ -861,7 +849,7 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
             ]),
             PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
             # Right panel for plots
-            Panel(defaultSizePercentage=10,
+            Panel(
                 style={
                 'overflowY': 'auto'
             },
