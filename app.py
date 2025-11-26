@@ -21,6 +21,7 @@ from dash_resizable_panels import PanelGroup, Panel, PanelResizeHandle
 # Import the chart layouts here
 import chart_accidents_over_time as chart_time
 import chart_accidents_by_weather as chart_weather
+import chart_trend
 
 # Setup variables
 current_plot_type = 'county'  # or 'scatter' or 'county' 
@@ -822,6 +823,10 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                     html.Details([
                         html.Summary("Accidents by Weather"),
                         chart_weather.layout
+                    ]),
+                    html.Details([
+                        html.Summary("Accidendts Trend"),
+                        chart_trend.layout
                     ])
                 ]),
         ]),
@@ -839,7 +844,7 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
 # Register callbacks from other modules
 chart_time.register_callbacks(app)
 chart_weather.register_callbacks(app)
-
+chart_trend.register_callbacks(app)
 
 
 if __name__ == '__main__':
