@@ -67,7 +67,6 @@ def update_chart():
             counts,
             x="Start_Time",
             y="count",  
-            title=f"Trend of Accidents ({freq_label})",
             markers=True
         )
     else:
@@ -81,7 +80,6 @@ def update_chart():
                 counts,
                 x="Start_Time",
                 y="count",  
-                title=f"Trend of Accidents",
                 markers=True,
                 color='group',
                 color_discrete_sequence=px.colors.qualitative.Safe
@@ -91,7 +89,8 @@ def update_chart():
     fig.update_layout(
         xaxis_title="Time", 
         yaxis_title="Accident Count",
-        margin=dict(l=40, r=40, t=60, b=40),
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=300,
         hovermode="x unified" # Shows a clean tooltip line across the graph
     )
 

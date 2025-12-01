@@ -104,3 +104,22 @@ label {
 .DateInput_input {
     font-size: 0.8rem;
 }
+
+.maplibregl-ctrl-attrib-button {
+    display: none;
+}
+
+.maplibregl-ctrl-attrib-inner {
+    display: none;
+}
+
+p {
+    font-size: 0.8rem; /* Adjust as needed */
+    margin: 0.2rem 0; /* Adjust spacing as needed */
+}
+
+hr {
+    border: none;
+    border-top: 1px solid rgb(172, 172, 172);
+    margin: 0.5em; /* Adjust spacing as needed */
+}

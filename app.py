@@ -21,6 +21,8 @@ from dash_resizable_panels import PanelGroup, Panel, PanelResizeHandle
 # Import the chart layouts here
 import chart_accidents_over_time as chart_time
 import chart_accidents_by_weather as chart_weather
+import chart_accidents_by_hour as chart_accidents_by_hour
+import chart_accidents_by_weekday as chart_accidents_by_weekday
 import chart_trend
 
 # Setup variables
@@ -373,7 +375,8 @@ def time_range_updated(start,end):
 
 @app.callback([Output('filtered-state', 'value'),
             Output('detail-level', 'data', allow_duplicate=True),
-            Output('map_layout', 'data', allow_duplicate=True)],
+            Output('map_layout', 'data', allow_duplicate=True),
+            Output('num-filtered-accidents', 'children', allow_duplicate=True)],
               [Input('filter-ui-trigger', 'value'),
                State('map_layout', 'data')],
               prevent_initial_call=True)
@@ -395,7 +398,7 @@ def refilter_data(filter_ui_trigger, map_layout=None):
     elif current_plot_type == 'heatmap':
         gs.update_spatial_index()
 
-    return time(), {"level": 0, "level_zero_signature": list(extract_lat_lng_zoom_from_layout(map_layout))}, map_layout  # reset detail level on filter change
+    return time(), {"level": 0, "level_zero_signature": list(extract_lat_lng_zoom_from_layout(map_layout))}, map_layout, f"{gs.get_data().shape[0]:,}"  # reset detail level on filter change
 
 
 
@@ -418,16 +421,29 @@ def update_scattermap_figure(filtering_state, map_layout):
     return fig
 
 
-@app.callback(Output('geoselection-state', 'value'), Input('map_figure', 'selectedData'), prevent_initial_call=True)
-def selection_made(relayout_data):
+@app.callback([Output('geoselection-state', 'value'),
+               Output('geoselection-info', 'children'),
+               Output('clear-selection-button', 'style'),
+               Output('num-filtered-selected-accidents', 'children', allow_duplicate=True)],
+             [Input('map_figure', 'selectedData'),
+              Input('clear-selection-button', 'n_clicks')], prevent_initial_call=True)
+def selection_made(relayout_data, clear_selection_clicks):
 
+    # check if the callback was triggered by clear button
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    if trigger_id == 'clear-selection-button':
+        gs.set_selection_bounds(None, None, None, None)
+        return time(), "No selection, use the box select tool.", {'display': 'none'}, f"{gs.get_data_selected_by_bounds().shape[0]:,}"
     print("HEJEJ", relayout_data)
     
     if relayout_data is None or "range" not in relayout_data:
-        return dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
     r = relayout_data["range"]
     if 'map' not in r:
-        return dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
     
     # extract the latitude and longitude bounds from the selection rectangle
     m = r['map']
@@ -439,7 +455,7 @@ def selection_made(relayout_data):
 
     gs.set_selection_bounds(lat_min, lat_max, lng_min, lng_max)
 
-    return time() # dummy value to trigger the next callback
+    return time(), f"", {'display': True}, f"{gs.get_data_selected_by_bounds().shape[0]:,}"
 
     # get lat_min, lat_max, lng_min, lng_max, _ = extract_bounds_zoom_from_layout(map_layout)
     # if selected_data is None:
@@ -519,7 +535,7 @@ def update_map_on_relayout(relayout_data, selected_plot_type):
     if not should_update_map:
         logging.info("Map center and zoom change not significant, not updating")
         return dash.no_update, dash.no_update, dash.no_update, dash.no_update
-    else:
+    else:   
         logging.info("Updating map with new relayout data: %s", relayout_data)
         coordinates = relayout_data['map._derived']['coordinates']
 
@@ -531,9 +547,9 @@ def update_map_on_relayout(relayout_data, selected_plot_type):
     # Update the options for the plot-type-radio element
     
     if scatter_disabled:
-        scatter_label = 'Scatter (zoom in to enable)'
+        scatter_label = 'Dotmap (zoom in to enable)'
     else:
-        scatter_label = 'Scatter'   
+        scatter_label = 'Dotmap'   
     
 
     plot_type_options = [
@@ -886,8 +902,22 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                             start_date="2017-01-01",
                             end_date= "2022-12-31",
                         ),
+
+                       
                 ]),
-            PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
+            PanelResizeHandle(html.Div(
+                style={
+                    "backgroundColor": "darkgrey",
+                    "height": "100%",
+                    "width": "5px",
+                    "display": "flex",
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                    "position": "relative",  # Ensure relative positioning for stacking context
+                    "zIndex": 1  # Ensure the icon is rendered on top
+                },
+                children=html.I(className="fa fa-arrows-alt-h", style={"color": "#444444", "fontSize": "14px", "zIndex": 2})
+            )),
             # Middle large map panel
             Panel(defaultSizePercentage=50, style={
                 'flex': '1',
@@ -899,6 +929,24 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                 'justifyContent': 'stretch',
                 'overflow':'scroll',
             }, children=[
+                html.Div(style={'display': 'flex', 'flexDirection': 'row', 'justifyContent': 'start'}, children=[
+                    html.Div([
+                        html.Div("Accidents after filtering ", style={'fontSize': '12px'}),
+                        html.Div(f"{gs.get_data().shape[0]:,}", id="num-filtered-accidents", style={'fontSize': '20px', 'color': '#0074D9'}),
+                    ]),
+                    html.Div(style={'width': '40px'}),  # spacer
+                    html.Div([
+                        html.Div("Accidents after filtering+selection ", style={'fontSize': '12px'}),
+                        html.Div(f"{gs.get_data().shape[0]:,}", id="num-filtered-selected-accidents", style={'fontSize': '20px', 'color': '#0074D9'}),
+                    ]),
+                     html.Div(style={'width': '40px'}),  # spacer
+                    html.Div(children=[
+                        html.Div("Geographical Selection", style={'fontSize': '12px'}),
+                        html.P("No selection, use the box select tool.", id="geoselection-info", style={'color': "#7A7A7A", 'fontSize': '12px'}),
+                        html.Button("Clear geographical selection", id="clear-selection-button", style={'display': 'none'}),
+                    ]),
+                ]),
+                html.Hr(),
                 html.Div(style = {'display': 'flex','flexDirection': 'row'},          
                     children = [dcc.RadioItems(
                         id='plot-type-radio',
@@ -954,13 +1002,32 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                     ]
                 ),
             ]),
-            PanelResizeHandle(html.Div(style={"backgroundColor": "grey", "height": "100%", "width": "5px"})),
-            # Right panel for plots
+            PanelResizeHandle(html.Div(
+                style={
+                    "backgroundColor": "darkgrey",
+                    "height": "100%",
+                    "width": "5px",
+                    "display": "flex",
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                    "position": "relative",  # Ensure relative positioning for stacking context
+                    "zIndex": 1  # Ensure the icon is rendered on top
+                },
+                children=html.I(className="fa fa-arrows-alt-h", style={"color": "#444444", "fontSize": "14px", "zIndex": 2})
+            )),
             Panel(
                 style={
                 'overflowY': 'auto'
             },
                 children=[
+                    html.Details([
+                        html.Summary("Accidents by hour"),
+                        chart_accidents_by_hour.layout
+                    ]),
+                    html.Details([
+                        html.Summary("Accidents by weekday"),
+                        chart_accidents_by_weekday.layout
+                    ]),
                     html.Details([
                         html.Summary("Accidents Over Time"),
                         chart_time.layout
@@ -994,6 +1061,8 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
 chart_time.register_callbacks(app)
 chart_weather.register_callbacks(app)
 chart_trend.register_callbacks(app)
+chart_accidents_by_hour.register_callbacks(app)
+chart_accidents_by_weekday.register_callbacks(app)
 
 
 if __name__ == '__main__':

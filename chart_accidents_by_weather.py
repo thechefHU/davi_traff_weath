@@ -37,7 +37,6 @@ def update_chart():
             counts,
             x="Weather_Group",
             y="normalized_count",  
-            title=f"Accidents by Weather",
             text="normalized_percentage_text",
         )
     else:
@@ -48,7 +47,6 @@ def update_chart():
                 counts,
                 x="Weather_Group",
                 y="normalized_count",  
-                title=f"Accidents by Weather",
                 text="normalized_percentage_text",
                 barmode='group',
                 color='group',
@@ -56,7 +54,13 @@ def update_chart():
             )
 
     # histogram for all cases
-
+    # reduce the margins of fig
+    fig.update_layout(
+        xaxis_title="Weather Condition",
+        yaxis_title="Proportion of Accidents",
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=300,
+    )
 
     return fig
 

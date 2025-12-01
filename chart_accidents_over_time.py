@@ -30,26 +30,55 @@ def register_callbacks(app):
 
 
 def update_chart(granularity):
-    counts = gs.get_data_selected_by_bounds().groupby(granularity).size().reset_index(name="count")
-    # nice ordering
-    if granularity == "weekday":
-        order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-        counts[granularity] = pd.Categorical(counts[granularity], categories=order, ordered=True)
-        counts = counts.sort_values(granularity)
-    elif granularity == "month":
-        month_names = {
-            1:"Jan", 2:"Feb", 3:"Mar", 4:"Apr", 5:"May", 6:"Jun",
-            7:"Jul", 8:"Aug", 9:"Sep", 10:"Oct", 11:"Nov", 12:"Dec"
-        }
-        counts["month"] = counts["month"].map(month_names)
+    if len(gs.active_comparison_groups()) == 0:
+        counts = gs.get_data_selected_by_bounds().groupby(granularity).size().reset_index(name="count")
+        # nice ordering
+        if granularity == "weekday":
+            order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+            counts[granularity] = pd.Categorical(counts[granularity], categories=order, ordered=True)
+            counts = counts.sort_values(granularity)
+        elif granularity == "month":
+            month_names = {
+                1:"Jan", 2:"Feb", 3:"Mar", 4:"Apr", 5:"May", 6:"Jun",
+                7:"Jul", 8:"Aug", 9:"Sep", 10:"Oct", 11:"Nov", 12:"Dec"
+            }
+            counts["month"] = counts["month"].map(month_names)
 
-    # histogram for all cases
-    fig = px.bar(
-        counts,
-        x=granularity,
-        y="count",
-        title=f"Accidents by {granularity.capitalize()}",
-        text="count"
+        # histogram for all cases
+        fig = px.bar(
+            counts,
+            x=granularity,
+            y="count",
+            text="count"
+        )
+    else:
+        counts = gs.get_active_comparison_data().groupby([granularity, "group"]).size().reset_index(name="count")
+        # nice ordering
+        if granularity == "weekday":
+            order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+            counts[granularity] = pd.Categorical(counts[granularity], categories=order, ordered=True)
+            counts = counts.sort_values(granularity)
+        elif granularity == "month":
+            month_names = {
+                1:"Jan", 2:"Feb", 3:"Mar", 4:"Apr", 5:"May", 6:"Jun",
+                7:"Jul", 8:"Aug", 9:"Sep", 10:"Oct", 11:"Nov", 12:"Dec"
+            }
+            counts["month"] = counts["month"].map(month_names)
+
+        fig = px.bar(
+                counts,
+                x=granularity,
+                y="count",
+                text="count",
+                barmode='group',
+                color='group',
+                color_discrete_sequence=px.colors.qualitative.Safe
+            )
+    fig.update_layout(
+        xaxis_title=granularity.capitalize(),
+        yaxis_title="Number of Accidents",
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=300,
     )
 
     return fig
