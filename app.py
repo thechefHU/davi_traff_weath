@@ -19,12 +19,11 @@ import dash_bootstrap_components as dbc
 from dash_resizable_panels import PanelGroup, Panel, PanelResizeHandle
 
 # Import the chart layouts here
-import chart_accidents_over_time as chart_time
-import chart_accidents_by_weather as chart_weather
+import chart_accidents_weather as chart_weather
 import chart_accidents_by_hour as chart_accidents_by_hour
 import chart_accidents_by_weekday as chart_accidents_by_weekday
 import chart_accidents_by_month as chart_accidents_by_month
-import chart_trend
+import chart_accidents_trend as chart_trend
 
 # Setup variables
 current_plot_type = 'county'  # or 'scatter' or 'county' 
@@ -1023,24 +1022,20 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                 children=[
                     html.Details([
                         html.Summary("Accidents by hour"),
-                        chart_accidents_by_hour.layout
-                    ]),
+                        chart_accidents_by_hour.layout,
+                    ], open=True),
                     html.Details([
                         html.Summary("Accidents by weekday"),
                         chart_accidents_by_weekday.layout
-                    ]),
+                    ], open=True),
                     html.Details([
                         html.Summary("Accidents by month"),
                         chart_accidents_by_month.layout
-                    ]),
-                    html.Details([
-                        html.Summary("Accidents Over Time"),
-                        chart_time.layout
                     ], open=True),
                     html.Details([
                         html.Summary("Accidents by Weather"),
                         chart_weather.layout
-                    ]),
+                    ], open=True),
                     html.Details([
                         html.Summary("Accidents Trend"),
                         chart_trend.layout
@@ -1063,7 +1058,6 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
 ])
 
 # Register callbacks from other modules
-chart_time.register_callbacks(app)
 chart_weather.register_callbacks(app)
 chart_trend.register_callbacks(app)
 chart_accidents_by_hour.register_callbacks(app)
