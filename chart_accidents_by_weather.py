@@ -16,9 +16,10 @@ def register_callbacks(app):
     # CALLBACK 1: updates graph when filters change
     @app.callback(
         Output("weather-chart", "figure"),
-         Input("filtered-state", "value")
+        [Input("filtered-state", "value"),
+         Input("geoselection-state", "value")]
     )
-    def update_graph(filtering_state):
+    def update_graph(filtering_state, geoselection_state):
         # filtering_state is just a dummy input to trigger the update when filters change
         # (this only happens in the main app)
         fig = update_chart()
@@ -28,7 +29,7 @@ def register_callbacks(app):
 def update_chart():
     if len(gs.active_comparison_groups()) == 0:
         # no comparison groups active, just show all data as one group
-        counts = gs.get_data().groupby("Weather_Group", observed=False).size().reset_index(name="count")
+        counts = gs.get_data_selected_by_bounds().groupby("Weather_Group", observed=False).size().reset_index(name="count")
         counts["group"] = "All Data"
         counts["normalized_count"] = counts["count"] / counts["count"].sum()
         counts["normalized_percentage_text"] = (100*counts["normalized_count"]).map("{:.1f}%".format)

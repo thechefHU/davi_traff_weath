@@ -30,7 +30,7 @@ START_ZOOM = 4.5
 SCATTER_PLOT_ZOOM_THRESHOLD = 10 # zoom level above which we switch to scatter plot
 
 PLOT_WIDTH = 700
-PLOT_HEIGHT = 500
+PLOT_HEIGHT = 600
 
 # global variable to hold the last map layout used for geographic filtering
 # We do this to avoid excessive geographic filtering when the user is just panning/zooming a little
@@ -183,12 +183,17 @@ def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, l
 
     # 4. Plotly figure with MapLibre base map and overlay
     fig = px.scatter_map(
+        lat=[0],
+        lon=[0],
+        opacity=0,
         zoom=zoom,
         center=center,
         map_style="dark",
         width=PLOT_WIDTH, 
         height=PLOT_HEIGHT
     )
+
+
     fig.update_layout(
         map_layers=[
             {
@@ -413,10 +418,30 @@ def update_scattermap_figure(filtering_state, map_layout):
     return fig
 
 
-@app.callback(Input('map_figure', 'selectedData'),)
+@app.callback(Output('geoselection-state', 'value'), Input('map_figure', 'selectedData'), prevent_initial_call=True)
 def selection_made(relayout_data):
 
     print("HEJEJ", relayout_data)
+    
+    if relayout_data is None or "range" not in relayout_data:
+        return dash.no_update
+    r = relayout_data["range"]
+    if 'map' not in r:
+        return dash.no_update
+    
+    # extract the latitude and longitude bounds from the selection rectangle
+    m = r['map']
+    lats = [m[0][1], m[1][1]]
+    lngs = [m[0][0], m[1][0]]
+
+    lat_min, lat_max = min(lats), max(lats)
+    lng_min, lng_max = min(lngs), max(lngs)
+
+    gs.set_selection_bounds(lat_min, lat_max, lng_min, lng_max)
+
+    return time() # dummy value to trigger the next callback
+
+    # get lat_min, lat_max, lng_min, lng_max, _ = extract_bounds_zoom_from_layout(map_layout)
     # if selected_data is None:
     #     return
 
@@ -785,7 +810,8 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
         direction='horizontal',
         children=[
             # Left slim Filters panel
-            Panel(defaultSizePercentage=20,
+            Panel(defaultSizePercentage=15,
+                  id='filters-panel',
                     style={
                         'flex': '1',
                         'padding': '8px',
@@ -818,7 +844,6 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                             options=weather_options,
                             value=[],
                             clearable=True,
-                            style={'marginBottom': '12px'},
                             multi=True,
                         ),
                         html.H3("Time of Day"),
@@ -846,6 +871,7 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                         html.H3("Date"),
                         dcc.RangeSlider(
                             id='date-range-slider',
+                            className='date-range-slider',
                             min=min_date.toordinal(),
                             max=max_date.toordinal(),
                             value=[min_date.toordinal(), max_date.toordinal()],
@@ -935,8 +961,6 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                 'overflowY': 'auto'
             },
                 children=[
-                    html.H2("Plots"),
-                    html.P("Add plot components here."),
                     html.Details([
                         html.Summary("Accidents Over Time"),
                         chart_time.layout
@@ -954,6 +978,7 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
 
     # Hidden/input stores (kept at root)
     dcc.Input(id='filtered-state', type='hidden', value='init'),
+    dcc.Input(id='geoselection-state', type='hidden', value='init'),
     dcc.Input(id='filter-ui-trigger', type='hidden', value='init'),
     # Format is [[lat, lng], zoom]
     dcc.Store(id='map_layout', data=[

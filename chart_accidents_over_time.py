@@ -17,9 +17,10 @@ def register_callbacks(app):
     @app.callback(
         Output("time-chart", "figure"),
         [Input("time-granularity", "value"),
-         Input("filtered-state", "value")]
+         Input("filtered-state", "value"),
+         Input("geoselection-state", "value")]
     )
-    def update_graph(granularity, filtering_state):
+    def update_graph(granularity, filtering_state, geoselection_state):
         # filtering_state is just a dummy input to trigger the update when filters change
         # (this only happens in the main app)
         fig = update_chart(granularity)
@@ -29,7 +30,7 @@ def register_callbacks(app):
 
 
 def update_chart(granularity):
-    counts = gs.get_data().groupby(granularity).size().reset_index(name="count")
+    counts = gs.get_data_selected_by_bounds().groupby(granularity).size().reset_index(name="count")
     # nice ordering
     if granularity == "weekday":
         order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]

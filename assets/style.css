@@ -2,6 +2,7 @@ html, body {
     height: 100%;
     margin: 0;
     overflow: hidden; /* Prevent scrollbars from appearing */
+    font-family: 'Franklin Gothic Medium', 'Arial', Arial, sans-serif;
 }
 .main-content-wrapper {
     height: 100vh;
@@ -75,4 +76,31 @@ label:has(input[type="radio"]:disabled) {
 .chart-placeholder-wrapper {
     padding: 15px;
     height: 100%;
+}
+h2 {
+    font-size: 1rem; /* Adjust as needed */
+    margin: 0.1rem; /* Remove space above and below */
+}
+
+h3 {
+    font-size: 0.8rem; /* Adjust as needed */
+    margin: 0.1rem; /* Remove space above and below */
+}
+
+#filters-panel {
+    font-size: 10px;
+}
+
+
+label {
+    font-size: 0.8rem; /* Adjust to make the text smaller */
+}
+
+.date-range-slider {
+    margin-left:  -22px;
+    margin-right: -22px;
+}
+
+.DateInput_input {
+    font-size: 0.8rem;
 }

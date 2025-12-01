@@ -43,16 +43,17 @@ def register_callbacks(app):
     
     @app.callback(
         Output("trend-chart", "figure"),
-         Input("filtered-state", "value")
+        [Input("filtered-state", "value"),
+        Input("geoselection-state", "value")]
     )
-    def update_graph(filtering_state):
+    def update_graph(filtering_state, geoselection_state):
         fig = update_chart()
         return fig
 
 
 # --- Main Chart Logic ---
 def update_chart():
-    df = gs.get_data()
+    df = gs.get_data_selected_by_bounds()
     
 
     # 5. Resample/Group

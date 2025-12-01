@@ -21,6 +21,14 @@ _h3_df = None
 _counties_df = None
 _comparison_groups = [pd.DataFrame(), pd.DataFrame()]
 
+_selection_bounds = {
+    "lat_min": None,
+    "lat_max": None,
+    "lon_min": None,
+    "lon_max": None,
+}
+_selected_data = pd.DataFrame()
+
 def load_data(data_folder="/data/", subset_accidents = None, logger=None):
     """
     Loads the initial data from the data folder
@@ -164,10 +172,9 @@ def set_comparison_group(group_no):
     """
     Sets the comparison group for the data
     """
-    global _current_data
     global _comparison_groups
     assert group_no in [1, 2, 3], "Group number must be 1, 2, or 3"
-    _comparison_groups[group_no - 1] = _current_data.copy()
+    _comparison_groups[group_no - 1] = get_data_selected_by_bounds().copy()
 
 
 def active_comparison_groups():    
@@ -189,12 +196,11 @@ def get_active_comparison_data():
     The points from selected data get group 'Selected data'.
     The 'group' column is categorical with the order: "Selected data", "Group 1", "Group 2", "Group 3".
     """
-    global _current_data
     global _comparison_groups
     frames = []
-    current_data_copy = _current_data.copy()
-    current_data_copy['group'] = "Selected data"
-    frames.append(current_data_copy)
+    selected_data_copy = get_data_selected_by_bounds().copy()
+    selected_data_copy['group'] = "Selected data"
+    frames.append(selected_data_copy)
     for i, group in enumerate(_comparison_groups):
         if not group.empty:
             group = group.copy()  # Avoid modifying the original group
@@ -209,6 +215,36 @@ def get_active_comparison_data():
     )
     return combined
 
+
+def get_data_selected_by_bounds():
+    """
+    Returns the current data filtered by the selection bounds
+    """
+    global _selected_data
+    global _current_data
+    if len(_selected_data) == 0:
+        return _current_data
+    else:
+        return _selected_data
+
+
+def set_selection_bounds(lat_min, lat_max, lon_min, lon_max):
+    """
+    Sets the current data to the points within the selection bounds
+    """
+    global _selection_bounds
+    _selection_bounds["lat_min"] = lat_min
+    _selection_bounds["lat_max"] = lat_max
+    _selection_bounds["lon_min"] = lon_min
+    _selection_bounds["lon_max"] = lon_max
+
+    global _selected_data
+    _selected_data =  _current_data[
+        (_current_data['Start_Lat'] >= lat_min) &
+        (_current_data['Start_Lat'] <= lat_max) &
+        (_current_data['Start_Lng'] >= lon_min) &
+        (_current_data['Start_Lng'] <= lon_max)
+    ]
 
 def clear_comparison_groups():
     """
