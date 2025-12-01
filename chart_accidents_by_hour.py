@@ -61,7 +61,7 @@ def update_chart(normalize):
             y="count",
             color='group',
             color_discrete_sequence=px.colors.qualitative.Safe
-            )
+        )
 
         # Check if "Selected Data" exists and has the same length as another group
         if "Selected data" in counts["group"].unique():
@@ -72,22 +72,25 @@ def update_chart(normalize):
                 if selected_data_count == group_count:
                     print("Hiding legend for 'Selected data' as it matches another group's count.")
                     fig.for_each_trace(
-                    lambda trace: trace.update(showlegend=False)
-                    if trace.name == "Selected data" else None
+                        lambda trace: trace.update(showlegend=False, hoverinfo="skip")
+                        if trace.name == "Selected data" else None
                     )
                     break
-        
-
 
     fig.update_layout(
         xaxis_title="hour".capitalize(),
         yaxis_title=ylabel,
         margin=dict(l=0, r=0, t=10, b=0),
         height=300,
+        hovermode="x unified"  # Shows a clean tooltip line across the graph
     )
+    
     if normalize:
         fig.update_yaxes(tickformat=".0%")  # Format y-axis ticks as percentages
-
+        hovertemplate = "Proportion of accidents: %{y:.1%}"
+    else:
+        hovertemplate = "No. of accidents: %{y}"
+    fig.update_traces(hovertemplate=hovertemplate)
     return fig
 
 

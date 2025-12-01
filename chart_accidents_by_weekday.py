@@ -92,6 +92,10 @@ def update_chart(normalize):
     )
     if normalize:
         fig.update_yaxes(tickformat=".0%")  # Format y-axis ticks as percentages
+        hovertemplate = "Weekday: %{x}<br>Proportion of accidents: %{y:.1%}"
+    else:
+        hovertemplate = "Weekday: %{x}<br>No. of accidents: %{y}"
+    fig.update_traces(hovertemplate=hovertemplate)
 
     return fig
 

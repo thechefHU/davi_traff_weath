@@ -121,9 +121,14 @@ def update_chart(normalize):
         yaxis_title=ylabel,
         margin=dict(l=0, r=0, t=10, b=0),
         height=300,
+        hovermode='x unified',
     )
     if normalize:
         fig.update_yaxes(tickformat=".0%")  # Format y-axis ticks as percentages
+        hovertemplate = "Proportion of accidents: %{y:.1%}"
+    else:
+        hovertemplate = "No. of accidents: %{y}"
+    fig.update_traces(hovertemplate=hovertemplate)
 
     return fig
 

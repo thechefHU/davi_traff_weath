@@ -137,6 +137,7 @@ def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, l
 
     logger.info("Creating heatmap figure...")
     if lat_min is None or lat_min == -1:
+        print("Using full data extent for heatmap")
         lng_min = df['Start_Lng'].min()
         lng_max = df['Start_Lng'].max()
         lat_min = df['Start_Lat'].min()
@@ -574,7 +575,7 @@ def extract_bounds_zoom_from_layout(layout):
     if layout is None or len(layout) <= 2:
         logger.warning("WARNING; No map layout data found, using default bounds")
         logger.warning("Layout data was: %s", layout)
-        return START_COORDINATES['lat']-1, START_COORDINATES['lat']+1, START_COORDINATES['lon']-1, START_COORDINATES['lon']+1, START_ZOOM
+        return -1, -1, -1, -1, START_ZOOM
 
     lat_min, lng_min, lat_max, lng_max = layout[2]
     zoom = layout[1] if len(layout) > 1 else START_ZOOM
@@ -590,18 +591,17 @@ def create_hexbin_figure(df, zoom=3, center=None, scale=0, opacity=1):
         geojson=gs.get_h3_geojson(),
         locations='h3cell',
         featureidkey='properties.h3cell',
-        color= color,
+        color=color,
         color_continuous_scale="Viridis",
         map_style="light",
         opacity=opacity,
         zoom=zoom,
-        #range_color=[0, df['n_accidents'].quantile(0.9)],
         center=center,
-        hover_data={'h3cell': True, 'n_accidents': True},
+        hover_data={'h3cell': False, 'n_accidents': False},
         width=PLOT_WIDTH,
         height=PLOT_HEIGHT
     )
-    fig.update_coloraxes(colorbar_title={"text":"No. of accidents"})
+    fig.update_coloraxes(colorbar_title={"text": "No. of accidents"})
     fig.update_coloraxes(colorbar_ticks="outside")
     tickvals = []
     ticktext = []
@@ -611,7 +611,11 @@ def create_hexbin_figure(df, zoom=3, center=None, scale=0, opacity=1):
             ticktext.append(str(i * 10**e) if i == 1 else "")  # Only label powers of 10
     fig.update_coloraxes(colorbar_tickvals=tickvals)
     fig.update_coloraxes(colorbar_ticktext=ticktext)
-    fig.update_traces(marker_line_width=0.1)
+    fig.update_traces(
+        marker_line_width=0.1,
+        hovertemplate="<b>Accidents:</b> %{customdata[1]}"
+    )
+    fig.update_traces(customdata=df[['h3cell', 'n_accidents']].values)
     return fig
 
 
@@ -637,28 +641,33 @@ def get_color_and_range(is_log, accidents):
         return accidents, [0, accidents.quantile(0.95)]
 
 
-
-def create_county_figure(df, zoom=3, center=None, scale=0,opacity=0.7):
-    color, _ = get_color_and_range(scale==0, df['n_accidents'])
+def create_county_figure(df, zoom=3, center=None, scale=0, opacity=0.7):
+    color, _ = get_color_and_range(scale == 0, df['n_accidents'])
     fig = px.choropleth_map(
         df,
         geojson=gs.get_counties_geojson(),
         locations='GEOID',
         featureidkey='properties.GEOID',
-        color= color,
+        color=color,
         color_continuous_scale="Viridis",
         map_style="light",
         zoom=zoom,
-        #range_color=range,
         center=center,
-        hover_data={'NAME': True, 'n_accidents': True},
-        labels = {'NAME':'County'},
+        hover_data={
+            'NAME': False,  # Hide default NAME column
+            'n_accidents': False  # Hide default n_accidents column
+        },
+        labels={'NAME': 'County'},
         opacity=opacity,
         width=PLOT_WIDTH,
         height=PLOT_HEIGHT
-    )   
-    fig.update_coloraxes(colorbar_title={"text":"No. of accidents"})
+    )
+    fig.update_traces(
+        hovertemplate="<b>County:</b> %{customdata[0]}<br><b>Accidents:</b> %{customdata[1]}"
+    )
+    fig.update_coloraxes(colorbar_title={"text": "No. of accidents"})
     fig.update_coloraxes(colorbar_ticks="outside")
+    fig.update_traces(customdata=df[['NAME', 'n_accidents']].values)
     tickvals = []
     ticktext = []
     for e in range(8):  # For each exponent
@@ -668,6 +677,8 @@ def create_county_figure(df, zoom=3, center=None, scale=0,opacity=0.7):
     fig.update_coloraxes(colorbar_tickvals=tickvals)
     fig.update_coloraxes(colorbar_ticktext=ticktext)
     return fig
+
+
 
 
 def update_county_figure(filtering_state, map_layout,scale=0,opacity=1):
@@ -1047,11 +1058,12 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                         chart_accidents_by_month.layout
                     ]),
                     html.Details([
-                        html.Summary("Accidents by Weather"),
+                        html.Summary("Accidents by weather"),
                         chart_weather.layout
                     ]),
                     html.Details([
-                        html.Summary("Accidents Trend"),
+                        html.Summary("Time trend"),
+                        html.P("Note that data sources and reporting vary over time, so trends over long periods are not necessarily indicative of real-world changes.", style={'fontSize': '12px', 'fontStyle': 'italic', 'color': '#7A7A7A'}),
                         chart_trend.layout
                     ]),
                 ]),
@@ -1064,7 +1076,7 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
     # Format is [[lat, lng], zoom]
     dcc.Store(id='map_layout', data=[
         # [[mid_lat, mid_lon], zoom, [top_lat, left_lon, bottom_lat, right_lon]]
-        [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM, [-1, -1, 1, 1]]
+        [[START_COORDINATES['lat'], START_COORDINATES['lon']], START_ZOOM, [-1, -1, -1, -1]]
     ]),
     # Store for detail level in heatmap
     # level zero signature keeps track of the map layout (product of zoom and pan)
