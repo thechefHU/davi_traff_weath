@@ -376,7 +376,8 @@ def time_range_updated(start,end):
 @app.callback([Output('filtered-state', 'value'),
             Output('detail-level', 'data', allow_duplicate=True),
             Output('map_layout', 'data', allow_duplicate=True),
-            Output('num-filtered-accidents', 'children', allow_duplicate=True)],
+            Output('num-filtered-accidents', 'children', allow_duplicate=True),
+            Output('num-filtered-selected-accidents', 'children', allow_duplicate=True)],
               [Input('filter-ui-trigger', 'value'),
                State('map_layout', 'data')],
               prevent_initial_call=True)
@@ -386,6 +387,7 @@ def refilter_data(filter_ui_trigger, map_layout=None):
 
     # filter the data
     gs.filter_data(filter_dict, logger=logger)
+    gs.refilter_geoselected_data()
     # If hexbin, update the binned data
     # If scatterplot, rebuild the spatial index
     global current_plot_type
@@ -398,7 +400,7 @@ def refilter_data(filter_ui_trigger, map_layout=None):
     elif current_plot_type == 'heatmap':
         gs.update_spatial_index()
 
-    return time(), {"level": 0, "level_zero_signature": list(extract_lat_lng_zoom_from_layout(map_layout))}, map_layout, f"{gs.get_data().shape[0]:,}"  # reset detail level on filter change
+    return time(), {"level": 0, "level_zero_signature": list(extract_lat_lng_zoom_from_layout(map_layout))}, map_layout, f"{gs.get_data().shape[0]:,}", f"{gs.get_data_geoselected().shape[0]:,}"  # reset detail level on filter change
 
 
 
@@ -424,12 +426,13 @@ def update_scattermap_figure(filtering_state, map_layout):
 @app.callback([Output('geoselection-state', 'value'),
                Output('geoselection-info', 'children'),
                Output('clear-selection-button', 'style'),
-               Output('num-filtered-selected-accidents', 'children', allow_duplicate=True)],
+               Output('num-filtered-selected-accidents', 'children', allow_duplicate=True),
+               Output('map_figure', 'figure', allow_duplicate=True)],
              [Input('map_figure', 'selectedData'),
-              Input('clear-selection-button', 'n_clicks')], prevent_initial_call=True)
-def selection_made(relayout_data, clear_selection_clicks):
-    if current_plot_type != 'scatter' and current_plot_type != 'heatmap':
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+              Input('clear-selection-button', 'n_clicks'),
+              State('map_layout', 'data')], prevent_initial_call=True)
+def selection_made(relayout_data, clear_selection_clicks, map_layout):
+
     # check if the callback was triggered by clear button
     ctx = dash.callback_context
     if not ctx.triggered:
@@ -437,14 +440,15 @@ def selection_made(relayout_data, clear_selection_clicks):
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
     if trigger_id == 'clear-selection-button':
         gs.set_selection_bounds(None, None, None, None)
-        return time(), "No selection, use the box select tool.", {'display': 'none'}, f"{gs.get_data_geoselected().shape[0]:,}"
-    #print("HEJEJ", relayout_data)
+        return time(), "No selection, use the selection tool.", {'display': 'none'}, f"{gs.get_data_geoselected().shape[0]:,}", update_figure(None, map_layout)[0]
+    if current_plot_type != 'scatter' and current_plot_type != 'heatmap':
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
     
     if relayout_data is None or "range" not in relayout_data:
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
     r = relayout_data["range"]
     if 'map' not in r:
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
     
     # extract the latitude and longitude bounds from the selection rectangle
     m = r['map']
@@ -456,31 +460,9 @@ def selection_made(relayout_data, clear_selection_clicks):
 
     gs.set_selection_bounds(lat_min, lat_max, lng_min, lng_max)
 
-    return time(), f"", {'display': True}, f"{gs.get_data_geoselected().shape[0]:,}"
+    return time(), f"Box selected", {'display': True}, f"{gs.get_data_geoselected().shape[0]:,}", dash.no_update
 
-    # get lat_min, lat_max, lng_min, lng_max, _ = extract_bounds_zoom_from_layout(map_layout)
-    # if selected_data is None:
-    #     return
 
-    # logger.info("Brushed data points: %s", selected_data)
-
-    # # Extract point indices from selected data
-
-    # if current_plot_type == 'scatter':
-    #     point_indices = [point['customdata'][0] for point in selected_data['points']]
-    #     print(point_indices)
-    #     #logger.info("Brushed data point indices: %s", point_indices)
-    #     filter_str = f"ID in {point_indices}"
-    #     filter_dict["brushed"] = filter_str
-    # elif current_plot_type in 'county':
-    #     counties = [point['location'] for point in selected_data['points']]
-    #     filter_str = f"geoid in {counties}"
-    #     filter_dict["brushed"] = filter_str
-    # elif current_plot_type in 'hexbin':
-    #     pass  # hexbin brushing not implemented yet
-
-    
-    # refilter_data(filter_ui_trigger=time())
 
 
 @app.callback([Output('geoselection-state', 'value', allow_duplicate=True),
@@ -489,15 +471,18 @@ def selection_made(relayout_data, clear_selection_clicks):
                Output('num-filtered-selected-accidents', 'children', allow_duplicate=True)],
                [Input('map_figure', 'selectedData')], prevent_initial_call=True)
 def brushed_data_changed(selected_data):
-    if current_plot_type == 'scatter' or current_plot_type == 'heatmap':
+    if current_plot_type == 'scatter' or current_plot_type == 'heatmap' or selected_data is None or len(selected_data) == 0:
         #handled in the other callback
         return dash.no_update, dash.no_update, dash.no_update, dash.no_update
     if current_plot_type == "county":
         # extract the geoid from the location of the points
         geoids = [point['location'] for point in selected_data['points']]
         gs.set_selected_counties(geoids)
-        return time(), f"", {'display': True}, f"{gs.get_data_geoselected().shape[0]:,}"
-        
+        return time(), f"{len(geoids)} counties selected", {'display': True}, f"{gs.get_data_geoselected().shape[0]:,}"
+    elif current_plot_type == "hexbin":
+        h3cells = [point['location'] for point in selected_data['points']]
+        gs.set_selected_h3cells(h3cells)
+        return time(), f"{len(h3cells)} hexagons selected", {'display': True}, f"{gs.get_data_geoselected().shape[0]:,}"
 
 
 
@@ -715,7 +700,8 @@ def update_detail_level(progress_indicator_dummy, selected_plot_type, detail_lev
     return dash.no_update
 
 
-@app.callback(Output('map_figure', 'figure'),
+@app.callback([Output('map_figure', 'figure'),
+               Output('map_figure', 'config')],
               [Input('filtered-state', 'value'),
                Input('map_layout', 'data'),
                Input('plot-type-radio', 'value'),
@@ -743,10 +729,16 @@ def update_detail_level(progress_indicator_dummy, selected_plot_type, detail_lev
                    }
                   )
               ])
-def update_figure(filtering_state, layout, selected_plot_type, detail_level, opacity=0.6):
+def update_figure(filtering_state, layout, selected_plot_type=None, detail_level=None, opacity=0.6):
     # filtering_state is a dummy variable to trigger updates whenever we filter
     global current_plot_type
     
+    if selected_plot_type is None:
+        selected_plot_type = current_plot_type
+
+    if detail_level is None:
+        detail_level = {"level": 0, "level_zero_signature": None}
+
     # For color scale
     # If we are within scatter plot zoom range, always use scatter plot
     # Otherwise, use the selected plot type
@@ -766,8 +758,9 @@ def update_figure(filtering_state, layout, selected_plot_type, detail_level, opa
             current_plot_type = selected_plot_type
             global filter_dict
             refilter_data(filter_dict)
-
+    graph_config = {"displaylogo": False}
     if current_plot_type == 'scatter':
+        graph_config["modeBarButtonsToRemove"] = ["lasso2d"]
         fig = update_scattermap_figure(filtering_state, layout)
     else:
         global last_plot_type_before_scatter
@@ -779,8 +772,9 @@ def update_figure(filtering_state, layout, selected_plot_type, detail_level, opa
         fig = update_hexbin_figure(filtering_state, layout, scale, opacity)
     elif current_plot_type == 'heatmap':
         fig = update_heatmap_figure(filtering_state, layout, scale, opacity, detail_level["level"])
+        graph_config["modeBarButtonsToRemove"] = ["lasso2d"]
     fig.update_layout(margin=dict(l=20, r=20, t=20, b=20))
-    return fig
+    return fig, graph_config
 
 # Add a callback for when "group-1-button" is clicked
 @app.callback(
@@ -959,8 +953,10 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                      html.Div(style={'width': '40px'}),  # spacer
                     html.Div(children=[
                         html.Div("Geographical Selection", style={'fontSize': '12px'}),
-                        html.P("No selection, use the box select tool.", id="geoselection-info", style={'color': "#7A7A7A", 'fontSize': '12px'}),
-                        html.Button("Clear geographical selection", id="clear-selection-button", style={'display': 'none'}),
+                        html.Div(style={'display': 'flex', 'flexDirection': 'row', 'alignItems': 'center'}, children=[
+                            html.P("No selection, use the selection tools.", id="geoselection-info", style={'color': "#7A7A7A", 'fontSize': '12px', 'marginRight': '10px'}),
+                            html.Button("Clear", id="clear-selection-button", style={'display': 'none'}),
+                        ]),
                     ]),
                 ]),
                 html.Hr(),
@@ -1000,7 +996,8 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                 dcc.Graph(
                     id="map_figure",
                     figure=create_county_figure(gs.get_binned_data(), zoom=START_ZOOM, center=START_COORDINATES).update_layout(margin=dict(l=20, r=20, t=20, b=20)),
-                    style={'flex': '1', 'minHeight': '0'}  # allow the graph to fill vertical space
+                    style={'flex': '1', 'minHeight': '0'},  # allow the graph to fill vertical space,
+                    config={"displaylogo": False}
                 ),
                 html.Div(
                     style={'display': 'flex', 'justifyContent': 'space-evenly', 'marginTop': '10px'},
@@ -1048,11 +1045,11 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                     html.Details([
                         html.Summary("Accidents by month"),
                         chart_accidents_by_month.layout
-                    ], open=True),
+                    ]),
                     html.Details([
                         html.Summary("Accidents by Weather"),
                         chart_weather.layout
-                    ], open=True),
+                    ]),
                     html.Details([
                         html.Summary("Accidents Trend"),
                         chart_trend.layout

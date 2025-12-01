@@ -234,6 +234,7 @@ def set_selection_bounds(lat_min, lat_max, lon_min, lon_max):
     """
     Sets the current data to the points within the selection bounds
     """
+        
     global _selection_params
     _selection_params = {
         "rectangle": {
@@ -247,8 +248,11 @@ def set_selection_bounds(lat_min, lat_max, lon_min, lon_max):
     _selection_params["rectangle"]["lat_max"] = lat_max
     _selection_params["rectangle"]["lon_min"] = lon_min
     _selection_params["rectangle"]["lon_max"] = lon_max
-
     global _selected_data
+    if lat_min is None or lat_max is None or lon_min is None or lon_max is None:
+        # No selection
+        _selected_data = _current_data
+        return
     _selected_data =  _current_data[
         (_current_data['Start_Lat'] >= lat_min) &
         (_current_data['Start_Lat'] <= lat_max) &
@@ -270,6 +274,43 @@ def set_selected_counties(geoids):
     _selected_data =  _current_data[
         _current_data['geoid'].isin(geoids)
     ]
+
+def set_selected_h3cells(h3cells):
+    """
+    Sets the current data to the points within the selected counties
+    """
+    global _selected_data
+    global _current_data
+
+    global _selection_params
+    _selection_params = {
+        "h3cells": h3cells
+    }
+    _selected_data =  _current_data[
+        _current_data['h3cell'].isin(h3cells)
+    ]
+
+
+def refilter_geoselected_data():
+    """
+    Re-applies the current selection bounds to the current data
+    """
+    global _selection_params
+    if "rectangle" in _selection_params:
+        params = _selection_params["rectangle"]
+        set_selection_bounds(
+            params["lat_min"],
+            params["lat_max"],
+            params["lon_min"],
+            params["lon_max"],
+        )
+    elif "counties" in _selection_params:
+        geoids = _selection_params["counties"]
+        set_selected_counties(geoids)
+    elif "h3cells" in _selection_params:
+        h3cells = _selection_params["h3cells"]
+        set_selected_h3cells(h3cells)
+
 
 def clear_comparison_groups():
     """
