@@ -23,6 +23,7 @@ import chart_accidents_over_time as chart_time
 import chart_accidents_by_weather as chart_weather
 import chart_accidents_by_hour as chart_accidents_by_hour
 import chart_accidents_by_weekday as chart_accidents_by_weekday
+import chart_accidents_by_month as chart_accidents_by_month
 import chart_trend
 
 # Setup variables
@@ -1029,6 +1030,10 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                         chart_accidents_by_weekday.layout
                     ]),
                     html.Details([
+                        html.Summary("Accidents by month"),
+                        chart_accidents_by_month.layout
+                    ]),
+                    html.Details([
                         html.Summary("Accidents Over Time"),
                         chart_time.layout
                     ], open=True),
@@ -1039,7 +1044,7 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                     html.Details([
                         html.Summary("Accidents Trend"),
                         chart_trend.layout
-                    ])
+                    ]),
                 ]),
         ]),
 
@@ -1063,6 +1068,7 @@ chart_weather.register_callbacks(app)
 chart_trend.register_callbacks(app)
 chart_accidents_by_hour.register_callbacks(app)
 chart_accidents_by_weekday.register_callbacks(app)
+chart_accidents_by_month.register_callbacks(app)
 
 
 if __name__ == '__main__':

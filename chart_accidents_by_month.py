@@ -15,10 +15,10 @@ def register_callbacks(app):
 
     # CALLBACK 1: updates graph when filters or radio buttons change
     @app.callback(
-        Output("weekday-chart", "figure"),
+        Output("month-chart", "figure"),
         [Input("filtered-state", "value"),
          Input("geoselection-state", "value"),
-         Input("weekday-normalize-toggle", "value")]
+         Input("month-normalize-toggle", "value")]
     )
     def update_graph(filtering_state, geoselection_state, normalize):
         # filtering_state is just a dummy input to trigger the update when filters change
@@ -30,11 +30,13 @@ def register_callbacks(app):
 
 
 def update_chart(normalize):
-    order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    month_names = {
+        1:"Jan", 2:"Feb", 3:"Mar", 4:"Apr", 5:"May", 6:"Jun",
+        7:"Jul", 8:"Aug", 9:"Sep", 10:"Oct", 11:"Nov", 12:"Dec"
+    }
     if len(gs.active_comparison_groups()) == 0:
-        counts = gs.get_data_selected_by_bounds().groupby("weekday").size().reset_index(name="count")
-        counts["weekday"] = pd.Categorical(counts["weekday"], categories=order, ordered=True)
-        counts = counts.sort_values("weekday")
+        counts = gs.get_data_selected_by_bounds().groupby("month").size().reset_index(name="count")
+        counts = counts.sort_values("month")
         if normalize:
             total = counts["count"].sum()
             counts["count"] = counts["count"] / total
@@ -44,14 +46,13 @@ def update_chart(normalize):
         # histogram for all cases
         fig = px.bar(
             counts,
-            x="weekday",
+            x="month",
             y="count",
         )
     else:
-        counts = gs.get_active_comparison_data().groupby(["weekday", "group"]).size().reset_index(name="count")
+        counts = gs.get_active_comparison_data().groupby(["month", "group"]).size().reset_index(name="count")
         # nice ordering
-        counts["weekday"] = pd.Categorical(counts["weekday"], categories=order, ordered=True)
-        counts = counts.sort_values("weekday")
+        counts = counts.sort_values("month")
         if normalize:
             # normalize within each group
             counts["count"] = counts.groupby("group")["count"].transform(lambda x: x / x.sum())
@@ -61,7 +62,7 @@ def update_chart(normalize):
 
         fig = px.bar(
             counts,
-            x="weekday",
+            x="month",
             y="count",
             color='group',
             barmode ='group',
@@ -85,10 +86,15 @@ def update_chart(normalize):
 
 
     fig.update_layout(
-        xaxis_title="weekday".capitalize(),
+        xaxis_title="month".capitalize(),
         yaxis_title=ylabel,
         margin=dict(l=0, r=0, t=10, b=0),
         height=300,
+    )
+    fig.update_xaxes(
+        tickmode='array',
+        tickvals=list(month_names.keys()),
+        ticktext=list(month_names.values())
     )
     if normalize:
         fig.update_yaxes(tickformat=".0%")  # Format y-axis ticks as percentages
@@ -98,12 +104,12 @@ def update_chart(normalize):
 
 layout = html.Div([
             dbc.Checkbox(
-                id='weekday-normalize-toggle',
+                id='month-normalize-toggle',
                 label='Normalize counts',
                 value=False,
             ),
             dcc.Graph(
-                id="weekday-chart",
+                id="month-chart",
             )
         ])
 
