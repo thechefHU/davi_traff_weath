@@ -32,7 +32,7 @@ def register_callbacks(app):
 def update_chart(normalize):
     order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
     if len(gs.active_comparison_groups()) == 0:
-        counts = gs.get_data_selected_by_bounds().groupby("weekday").size().reset_index(name="count")
+        counts = gs.get_data_geoselected().groupby("weekday").size().reset_index(name="count")
         counts["weekday"] = pd.Categorical(counts["weekday"], categories=order, ordered=True)
         counts = counts.sort_values("weekday")
         if normalize:
@@ -48,13 +48,13 @@ def update_chart(normalize):
             y="count",
         )
     else:
-        counts = gs.get_active_comparison_data().groupby(["weekday", "group"]).size().reset_index(name="count")
+        counts = gs.get_active_comparison_data().groupby(["weekday", "group"], observed=False).size().reset_index(name="count")
         # nice ordering
         counts["weekday"] = pd.Categorical(counts["weekday"], categories=order, ordered=True)
         counts = counts.sort_values("weekday")
         if normalize:
             # normalize within each group
-            counts["count"] = counts.groupby("group")["count"].transform(lambda x: x / x.sum())
+            counts["count"] = counts.groupby("group", observed=False)["count"].transform(lambda x: x / x.sum())
             ylabel = "Proportion of Accidents"
         else:
             ylabel = "Number of Accidents"

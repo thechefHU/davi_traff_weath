@@ -29,7 +29,7 @@ def register_callbacks(app):
 def update_chart():
     if len(gs.active_comparison_groups()) == 0:
         # no comparison groups active, just show all data as one group
-        counts = gs.get_data_selected_by_bounds().groupby("Weather_Group", observed=False).size().reset_index(name="count")
+        counts = gs.get_data_geoselected().groupby("Weather_Group", observed=False).size().reset_index(name="count")
         counts["group"] = "All Data"
         counts["normalized_count"] = counts["count"] / counts["count"].sum()
         counts["normalized_percentage_text"] = (100*counts["normalized_count"]).map("{:.1f}%".format)

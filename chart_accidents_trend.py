@@ -65,8 +65,8 @@ def register_callbacks(app):
 
 def update_chart(normalize):
     if len(gs.active_comparison_groups()) == 0:
-        time_rule, freq_label = get_natural_frequency(gs.get_data_selected_by_bounds(), "Start_Time", target_points=30)
-        counts = gs.get_data_selected_by_bounds().resample(time_rule, on="Start_Time").size().reset_index(name="count")
+        time_rule, freq_label = get_natural_frequency(gs.get_data_geoselected(), "Start_Time", target_points=30)
+        counts = gs.get_data_geoselected().resample(time_rule, on="Start_Time").size().reset_index(name="count")
         if normalize:
             total = counts["count"].sum()
             counts["count"] = counts["count"] / total
@@ -83,7 +83,7 @@ def update_chart(normalize):
     else:
         time_rule, freq_label = get_natural_frequency(gs.get_active_comparison_data(), "Start_Time", target_points=30)
         grouper = pd.Grouper(key="Start_Time", freq=time_rule)
-        counts = gs.get_active_comparison_data().groupby([grouper, "group"]).size().reset_index(name="count")
+        counts = gs.get_active_comparison_data().groupby([grouper, "group"], observed=False).size().reset_index(name="count")
         # nice ordering
         if normalize:
             # normalize within each group

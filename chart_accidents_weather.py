@@ -32,7 +32,7 @@ def register_callbacks(app):
 def update_chart(normalize):
     order = ["Clear", "Cloudy", "Rain", "Fog", "Wind", "Dust/Smoke", "Snow", "Thunderstorm", "Hail", "Other"]
     if len(gs.active_comparison_groups()) == 0:
-        counts = gs.get_data_selected_by_bounds().groupby("Weather_Group").size().reset_index(name="count")
+        counts = gs.get_data_geoselected().groupby("Weather_Group").size().reset_index(name="count")
         counts["Weather_Group"] = pd.Categorical(counts["Weather_Group"], categories=order, ordered=True)
         counts = counts.sort_values("Weather_Group")
         if normalize:

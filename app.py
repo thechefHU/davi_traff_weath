@@ -192,7 +192,7 @@ def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, l
         center=center,
         map_style="dark",
         width=PLOT_WIDTH, 
-        height=PLOT_HEIGHT
+        height=PLOT_HEIGHT,
     )
 
 
@@ -212,7 +212,7 @@ def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, l
             }
         ],
     )
-
+        
 
     return fig
 
@@ -428,7 +428,8 @@ def update_scattermap_figure(filtering_state, map_layout):
              [Input('map_figure', 'selectedData'),
               Input('clear-selection-button', 'n_clicks')], prevent_initial_call=True)
 def selection_made(relayout_data, clear_selection_clicks):
-
+    if current_plot_type != 'scatter' and current_plot_type != 'heatmap':
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
     # check if the callback was triggered by clear button
     ctx = dash.callback_context
     if not ctx.triggered:
@@ -436,8 +437,8 @@ def selection_made(relayout_data, clear_selection_clicks):
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
     if trigger_id == 'clear-selection-button':
         gs.set_selection_bounds(None, None, None, None)
-        return time(), "No selection, use the box select tool.", {'display': 'none'}, f"{gs.get_data_selected_by_bounds().shape[0]:,}"
-    print("HEJEJ", relayout_data)
+        return time(), "No selection, use the box select tool.", {'display': 'none'}, f"{gs.get_data_geoselected().shape[0]:,}"
+    #print("HEJEJ", relayout_data)
     
     if relayout_data is None or "range" not in relayout_data:
         return dash.no_update, dash.no_update, dash.no_update, dash.no_update
@@ -455,7 +456,7 @@ def selection_made(relayout_data, clear_selection_clicks):
 
     gs.set_selection_bounds(lat_min, lat_max, lng_min, lng_max)
 
-    return time(), f"", {'display': True}, f"{gs.get_data_selected_by_bounds().shape[0]:,}"
+    return time(), f"", {'display': True}, f"{gs.get_data_geoselected().shape[0]:,}"
 
     # get lat_min, lat_max, lng_min, lng_max, _ = extract_bounds_zoom_from_layout(map_layout)
     # if selected_data is None:
@@ -482,7 +483,21 @@ def selection_made(relayout_data, clear_selection_clicks):
     # refilter_data(filter_ui_trigger=time())
 
 
-
+@app.callback([Output('geoselection-state', 'value', allow_duplicate=True),
+               Output('geoselection-info', 'children', allow_duplicate=True),
+               Output('clear-selection-button', 'style', allow_duplicate=True),
+               Output('num-filtered-selected-accidents', 'children', allow_duplicate=True)],
+               [Input('map_figure', 'selectedData')], prevent_initial_call=True)
+def brushed_data_changed(selected_data):
+    if current_plot_type == 'scatter' or current_plot_type == 'heatmap':
+        #handled in the other callback
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+    if current_plot_type == "county":
+        # extract the geoid from the location of the points
+        geoids = [point['location'] for point in selected_data['points']]
+        gs.set_selected_counties(geoids)
+        return time(), f"", {'display': True}, f"{gs.get_data_geoselected().shape[0]:,}"
+        
 
 
 
@@ -900,7 +915,9 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                             min_date_allowed="2017-01-01",
                             max_date_allowed="2022-12-31",
                             start_date="2017-01-01",
-                            end_date= "2022-12-31",
+                            end_date="2022-12-31",
+                            day_size=26,
+                            first_day_of_week=1
                         ),
 
                        

@@ -53,7 +53,7 @@ def register_callbacks(app):
 
 # --- Main Chart Logic ---
 def update_chart():
-    df = gs.get_data_selected_by_bounds()
+    df = gs.get_data_geoselected()
     
 
     # 5. Resample/Group

@@ -35,7 +35,7 @@ def update_chart(normalize):
         7:"Jul", 8:"Aug", 9:"Sep", 10:"Oct", 11:"Nov", 12:"Dec"
     }
     if len(gs.active_comparison_groups()) == 0:
-        counts = gs.get_data_selected_by_bounds().groupby("month").size().reset_index(name="count")
+        counts = gs.get_data_geoselected().groupby("month").size().reset_index(name="count")
         counts = counts.sort_values("month")
         if normalize:
             total = counts["count"].sum()

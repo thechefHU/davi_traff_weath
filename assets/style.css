@@ -102,7 +102,23 @@ label {
 }
 
 .DateInput_input {
-    font-size: 0.8rem;
+    font-size: 0.7rem;
+    width: 8em;
+    margin-right: -5px;
+    margin-left: -5px;
+}
+
+.DateInput {
+    width: min-content;
+    margin-right: 2px;
+    margin-left: 2px;
+    padding: 0px;
+
+}
+
+.DateRangePickerInput_arrow_svg {
+    width: 20px;
+    height: 10px;
 }
 
 .maplibregl-ctrl-attrib-button {
@@ -122,4 +138,23 @@ hr {
     border: none;
     border-top: 1px solid rgb(172, 172, 172);
     margin: 0.5em; /* Adjust spacing as needed */
+}
+
+.DateRangePicker_picker {
+    z-index: 1001; /* Ensure the date picker appears above other elements */
+}
+
+.CalendarMonth {
+    margin-left: -13px;
+    margin-right: -13px;
+}
+
+.CalendarMonthGrid_month__horizontal {
+    margin: 0px;
+    padding: -13px;
+}
+.CalendarMonth_caption {
+    font-size: 0.8rem;
+    margin-bottom: 5px;
+    margin-left: 15px;   
 }

@@ -21,11 +21,13 @@ _h3_df = None
 _counties_df = None
 _comparison_groups = [pd.DataFrame(), pd.DataFrame()]
 
-_selection_bounds = {
-    "lat_min": None,
-    "lat_max": None,
-    "lon_min": None,
-    "lon_max": None,
+_selection_params = {
+    "rectangle": {
+        "lat_min": None,
+        "lat_max": None,
+        "lon_min": None,
+        "lon_max": None,
+    }
 }
 _selected_data = pd.DataFrame()
 
@@ -174,7 +176,7 @@ def set_comparison_group(group_no):
     """
     global _comparison_groups
     assert group_no in [1, 2, 3], "Group number must be 1, 2, or 3"
-    _comparison_groups[group_no - 1] = get_data_selected_by_bounds().copy()
+    _comparison_groups[group_no - 1] = get_data_geoselected().copy()
 
 
 def active_comparison_groups():    
@@ -198,7 +200,7 @@ def get_active_comparison_data():
     """
     global _comparison_groups
     frames = []
-    selected_data_copy = get_data_selected_by_bounds().copy()
+    selected_data_copy = get_data_geoselected().copy()
     selected_data_copy['group'] = "Selected data"
     frames.append(selected_data_copy)
     for i, group in enumerate(_comparison_groups):
@@ -216,7 +218,7 @@ def get_active_comparison_data():
     return combined
 
 
-def get_data_selected_by_bounds():
+def get_data_geoselected():
     """
     Returns the current data filtered by the selection bounds
     """
@@ -232,11 +234,19 @@ def set_selection_bounds(lat_min, lat_max, lon_min, lon_max):
     """
     Sets the current data to the points within the selection bounds
     """
-    global _selection_bounds
-    _selection_bounds["lat_min"] = lat_min
-    _selection_bounds["lat_max"] = lat_max
-    _selection_bounds["lon_min"] = lon_min
-    _selection_bounds["lon_max"] = lon_max
+    global _selection_params
+    _selection_params = {
+        "rectangle": {
+            "lat_min": lat_min,
+            "lat_max": lat_max,
+            "lon_min": lon_min,
+            "lon_max": lon_max,
+        }
+    }
+    _selection_params["rectangle"]["lat_min"] = lat_min
+    _selection_params["rectangle"]["lat_max"] = lat_max
+    _selection_params["rectangle"]["lon_min"] = lon_min
+    _selection_params["rectangle"]["lon_max"] = lon_max
 
     global _selected_data
     _selected_data =  _current_data[
@@ -244,6 +254,21 @@ def set_selection_bounds(lat_min, lat_max, lon_min, lon_max):
         (_current_data['Start_Lat'] <= lat_max) &
         (_current_data['Start_Lng'] >= lon_min) &
         (_current_data['Start_Lng'] <= lon_max)
+    ]
+
+def set_selected_counties(geoids):
+    """
+    Sets the current data to the points within the selected counties
+    """
+    global _selected_data
+    global _current_data
+
+    global _selection_params
+    _selection_params = {
+        "counties": geoids
+    }
+    _selected_data =  _current_data[
+        _current_data['geoid'].isin(geoids)
     ]
 
 def clear_comparison_groups():

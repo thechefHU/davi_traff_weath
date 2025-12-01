@@ -31,7 +31,7 @@ def register_callbacks(app):
 
 def update_chart(normalize):
     if len(gs.active_comparison_groups()) == 0:
-        counts = gs.get_data_selected_by_bounds().groupby("hour").size().reset_index(name="count")
+        counts = gs.get_data_geoselected().groupby("hour").size().reset_index(name="count")
         if normalize:
             total = counts["count"].sum()
             counts["count"] = counts["count"] / total
