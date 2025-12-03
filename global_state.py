@@ -20,6 +20,7 @@ _counties_geojson = None
 _h3_df = None
 _counties_df = None
 _comparison_groups = [pd.DataFrame(), pd.DataFrame()]
+_comparison_groups_selections = [{}, {}]
 
 _selection_params = {
     "rectangle": {
@@ -175,8 +176,19 @@ def set_comparison_group(group_no):
     Sets the comparison group for the data
     """
     global _comparison_groups
+    global _comparison_groups_selections
+    global _selection_params
     assert group_no in [1, 2, 3], "Group number must be 1, 2, or 3"
     _comparison_groups[group_no - 1] = get_data_geoselected().copy()
+    _comparison_groups_selections[group_no - 1] = _selection_params.copy()
+
+
+def get_comparison_group_selections():
+    """
+    Returns the selection parameters for the comparison groups
+    """
+    global _comparison_groups_selections
+    return _comparison_groups_selections
 
 
 def active_comparison_groups():    
@@ -318,6 +330,8 @@ def clear_comparison_groups():
     """
     global _comparison_groups
     _comparison_groups = [pd.DataFrame(), pd.DataFrame()]
+    global _comparison_groups_selections
+    _comparison_groups_selections = [{}, {}]
 
 def get_h3_geojson():
     return _h3_geojson

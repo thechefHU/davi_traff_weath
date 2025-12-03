@@ -213,7 +213,7 @@ def create_heatmap_figure(df, zoom=3, center=None, lat_min=None, lat_max=None, l
             }
         ],
     )
-        
+
 
     return fig
 
@@ -641,6 +641,92 @@ def get_color_and_range(is_log, accidents):
         return accidents, [0, accidents.quantile(0.95)]
 
 
+def add_comparison_group_selections(fig):
+    """Add the comparison group selection bounds to the figure"""
+
+    # Function from https://community.plotly.com/t/draw-polygon-in-mapbox-with-dash-python/34917/5
+    def get_polygon(lons, lats, color='blue'):
+            if len(lons) != len(lats):
+                raise ValueError('the length of longitude list must coincide with that of latitude')
+            geojd = {"type": "FeatureCollection"}
+            geojd['features'] = []
+            coords = []
+            for lon, lat in zip(lons, lats): 
+                coords.append((lon, lat))   
+            coords.append((lons[0], lats[0]))  # close the polygon  
+            geojd['features'].append({ "type": "Feature",
+                                    "geometry": {"type": "Polygon",
+                                                    "coordinates": [coords] }})
+            layer = dict(sourcetype='geojson',
+                         source=geojd,
+                         below='',  
+                         type='line',   
+                         color=color)
+            return layer
+    
+    def get_county_polygons(geoids, color='blue'):
+        county_geojson = gs.get_counties_geojson()
+        features = []
+        for feature in county_geojson['features']:
+            if feature['properties']['GEOID'] in geoids:
+                features.append(feature)
+
+        
+        layer = dict(sourcetype='geojson',
+                source={"type": "FeatureCollection",
+                    "features": features},
+                below='',  
+                type='line',   
+                color=color,
+                line=dict(width=4))  # Set the line width to 2
+        return layer
+
+    def get_h3_polygons(h3cells, color='blue'):
+        h3_geojson = gs.get_h3_geojson()
+        features = []
+        for feature in h3_geojson['features']:
+            if feature['properties']['h3cell'] in h3cells:
+                features.append(feature)
+
+        layer = dict(sourcetype='geojson',
+                source={"type": "FeatureCollection",
+                    "features": features},
+                below='',  
+                type='line',   
+                color=color,
+                line=dict(width=4))  # Set the line width to 2
+        return layer
+
+
+    # possible key are "rectangle", "counties", "h3celss"
+    selections = gs.get_comparison_group_selections()
+
+    for i, selection in enumerate(selections):
+        new_layer = None
+        if len(selections) == 0:
+            return
+        col = px.colors.qualitative.Safe[i+1]
+        if "rectangle" in selection:
+            logger.info("Adding comparison rectangle to map")
+            lng_min = selection["rectangle"]["lon_min"]
+            lng_max = selection["rectangle"]["lon_max"]
+            lat_min = selection["rectangle"]["lat_min"]
+            lat_max = selection["rectangle"]["lat_max"]
+            
+            new_layer = get_polygon(
+                lons=[lng_min, lng_max, lng_max, lng_min],
+                lats=[lat_min, lat_min, lat_max, lat_max],
+                color=col
+            )
+        elif "counties" in selection:
+            new_layer = get_county_polygons(selection["counties"], color=col)
+        elif "h3cells" in selection:
+            new_layer = get_h3_polygons(selection["h3cells"], color=col)
+        # Append the new layer to the existing layers
+        if new_layer is not None:
+            current_layers = list(fig.layout.map['layers']) if 'layers' in fig.layout.map else []
+            fig.update_layout(map_layers=current_layers + [new_layer])
+
 def create_county_figure(df, zoom=3, center=None, scale=0, opacity=0.7):
     color, _ = get_color_and_range(scale == 0, df['n_accidents'])
     fig = px.choropleth_map(
@@ -785,6 +871,10 @@ def update_figure(filtering_state, layout, selected_plot_type=None, detail_level
         fig = update_heatmap_figure(filtering_state, layout, scale, opacity, detail_level["level"])
         graph_config["modeBarButtonsToRemove"] = ["lasso2d"]
     fig.update_layout(margin=dict(l=20, r=20, t=20, b=20))
+
+    if len(gs.get_comparison_group_selections()) > 0:
+        add_comparison_group_selections(fig)
+
     return fig, graph_config
 
 # Add a callback for when "group-1-button" is clicked
