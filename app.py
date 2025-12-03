@@ -117,7 +117,7 @@ def create_scattermap_figure(df, zoom=3, center=None):
         opacity=0.7
     )
     
-    fig.update_traces(cluster=dict(enabled=True))
+    fig.update_traces(cluster=dict(enabled=True,size=5*np.arange(1,8,step=0.1),step=10**np.arange(0,7,step=0.1)))
     return fig
 
 @app.callback(Output('Severity', 'value', allow_duplicate=True),
@@ -548,9 +548,9 @@ def update_map_on_relayout(relayout_data, selected_plot_type):
     # Update the options for the plot-type-radio element
     
     if scatter_disabled:
-        scatter_label = 'Dotmap (zoom in to enable)'
+        scatter_label = 'Bubble Map (zoom in to enable)'
     else:
-        scatter_label = 'Dotmap'   
+        scatter_label = 'Bubble Map'   
     
 
     plot_type_options = [
@@ -978,7 +978,7 @@ app.layout = html.Div(style={'height': '100vh'}, children=[
                             {'label': 'County', 'value': 'county'},
                             {'label': 'Hexagon', 'value': 'hexbin'},
                             {'label': 'Heatmap', 'value': 'heatmap'},
-                            {'label': 'Scatter (zoom in to enable)', 'value': 'scatter', 'disabled': True}
+                            {'label': 'Bubble Map (zoom in to enable)', 'value': 'scatter', 'disabled': True}
                         ],
                         value='county',
                         labelStyle={'display': 'inline-block', 'marginBottom': '6px'}
