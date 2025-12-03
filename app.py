@@ -117,7 +117,7 @@ def create_scattermap_figure(df, zoom=3, center=None):
         opacity=0.7
     )
     
-    fig.update_traces(cluster=dict(enabled=True,size=5*np.arange(1,8,step=0.1),step=10**np.arange(0,7,step=0.1)))
+    fig.update_traces(cluster=dict(enabled=True,size=5*np.arange(1,8,step=0.1),step=10**np.arange(0,7,step=0.1),maxzoom=17))
     return fig
 
 @app.callback(Output('Severity', 'value', allow_duplicate=True),
