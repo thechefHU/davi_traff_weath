@@ -42,7 +42,6 @@ def update_chart(normalize):
         fig = px.line(
             counts,
             x="hour",
-            markers=True,
             y="count",
         )
     else:
@@ -57,7 +56,6 @@ def update_chart(normalize):
         fig = px.line(
             counts,
             x="hour",
-            markers=True,
             y="count",
             color='group',
             color_discrete_sequence=px.colors.qualitative.Safe
@@ -90,7 +88,7 @@ def update_chart(normalize):
         hovertemplate = "Proportion of accidents: %{y:.1%}"
     else:
         hovertemplate = "No. of accidents: %{y}"
-    fig.update_traces(hovertemplate=hovertemplate)
+    fig.update_traces(hovertemplate=hovertemplate, line_shape='hv')
     return fig
 
 
