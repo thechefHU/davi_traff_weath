@@ -87,6 +87,7 @@ def update_chart(normalize):
     fig.update_layout(
         xaxis_title="weekday".capitalize(),
         yaxis_title=ylabel,
+        bargap=0.6,
         margin=dict(l=0, r=0, t=10, b=0),
         height=300,
     )
